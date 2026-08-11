@@ -1,8 +1,8 @@
-# Project Vision — Qortium Radio Station
+# Project Vision — NodeFM Station
 
 ## 1. Product definition
 
-Qortium Radio Station is a Qortium-native scheduled auto-DJ radio dApp.
+NodeFM Station is a Qortium-native scheduled auto-DJ radio dApp.
 
 The first product is a **radio station**, not a general music publishing platform.
 

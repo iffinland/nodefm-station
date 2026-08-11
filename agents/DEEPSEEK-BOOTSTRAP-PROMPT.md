@@ -4,7 +4,7 @@ Use this prompt when starting the first implementation phase.
 
 ---
 
-You are implementing a brand-new Qortium-native dApp with the working title **Qortium Radio Station**.
+You are implementing a brand-new Qortium-native dApp named **NodeFM Station**.
 
 This is NOT a port and NOT a refactor of the old Q-Music/Qortal project.
 

@@ -1,4 +1,4 @@
-# Agent Rules — Qortium Radio Station
+# Agent Rules — NodeFM Station
 
 These rules apply to AI agents working on this project.
 

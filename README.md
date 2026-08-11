@@ -1,7 +1,7 @@
-# Qortium Radio Station — Phase 0 Specification
+# NodeFM Station — Phase 0 Specification
 
 Status: **Architecture / specification only**
-Working title: **Qortium Radio Station**
+Application name: **NodeFM**
 Priority: **Scheduled Auto-DJ radio station**
 Future Q-Music/community platform: **separate project, explicitly out of scope**
 
