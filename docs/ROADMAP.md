@@ -99,6 +99,10 @@ Build:
 - agenda view;
 - drag/move/resize;
 - overlap validation;
+- recurring schedule authoring;
+- timezone-aware generation of concrete UTC ScheduleEvent instances;
+- Daily and Weekly recurrence;
+- bounded future event generation;
 - static scheduled playlists;
 - exact transitions back to default rotation;
 - upcoming program list on public page.

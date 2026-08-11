@@ -228,3 +228,45 @@ If remote/concurrent updates create a conflict anyway:
 - surface admin warning.
 
 A later architecture decision may define revision precedence if QDN publication semantics require it.
+
+## 13. Recurring schedule generation
+
+Recurring schedules are an admin authoring convenience, not the canonical
+runtime representation of the radio timeline.
+
+The RadioTimelineEngine must operate only on concrete ScheduleEvent instances
+with explicit UTC start and end timestamps.
+
+Initial recurrence options:
+
+- Never
+- Daily
+- Weekly
+
+Recurring rules should generate concrete schedule events for a bounded future
+window rather than creating an unlimited number of events.
+
+A practical first implementation may generate approximately 4–8 weeks ahead.
+
+The RadioTimelineEngine must not evaluate recurrence rules.
+
+Runtime input is always concrete ScheduleEvent data.
+
+This keeps:
+
+- timeline resolution deterministic;
+- DST handling outside the playback engine;
+- overlap detection explicit;
+- schedule data inspectable;
+- event boundaries unambiguous.
+
+Recurrence is defined using station-local wall-clock time.
+
+For example, "Every day at 20:00 Europe/Helsinki" must continue to mean local
+20:00 even when daylight saving time changes.
+
+Each generated occurrence is stored as its correct UTC interval.
+
+Never implement recurring local-time schedules using a permanently fixed UTC
+offset.
+

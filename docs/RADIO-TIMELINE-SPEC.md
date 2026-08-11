@@ -301,3 +301,27 @@ Must include exact boundary tests:
 - not enough liked tracks;
 - no liked tracks;
 - deterministic fallback reproduces identical lineup.
+
+## 16. Recurrence is not a timeline-engine concern
+
+The timeline engine consumes only concrete schedule events with absolute UTC
+start and end timestamps.
+
+It must never calculate:
+
+- daily recurrence;
+- weekly recurrence;
+- station-local recurring wall-clock rules;
+- daylight-saving recurrence conversion.
+
+Those concerns belong to the admin schedule-generation layer.
+
+Architecture:
+
+    recurrence definition
+        -> schedule generator
+        -> concrete UTC events
+        -> RadioTimelineEngine
+
+This is a core architecture invariant.
+

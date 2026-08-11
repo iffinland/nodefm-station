@@ -319,3 +319,37 @@ radio-notice-
 ```
 
 These are not yet canonical Qortium identifier choices.
+
+## 13. Recurring schedule authoring model
+
+Recurring scheduling is separated from canonical broadcast events.
+
+A recurrence definition is an admin-side authoring object.
+
+Conceptually:
+
+    type ScheduleRecurrence = {
+      recurrenceId: string
+      timezone: string
+      frequency: "daily" | "weekly"
+      localStartTime: string
+      durationMs: number
+      daysOfWeek?: number[]
+      activeFromLocalDate: string
+      activeUntilLocalDate?: string
+    }
+
+This object must not be consumed directly by RadioTimelineEngine.
+
+Flow:
+
+    ScheduleRecurrence
+        -> timezone-aware schedule generator
+        -> concrete ScheduleEvent[]
+        -> RadioTimelineEngine
+
+Concrete ScheduleEvent resources remain the canonical runtime timeline.
+
+This separation is mandatory because it keeps recurrence and daylight-saving
+logic out of live playback calculations.
+
