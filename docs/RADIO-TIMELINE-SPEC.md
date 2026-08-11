@@ -260,27 +260,27 @@ Conceptual interface:
 
 ```ts
 type RadioTimelineEngine = {
-  getLiveState(nowUtcMs: number): LiveState
-  getUpcomingTracks(nowUtcMs: number, count: number): UpcomingTrack[]
-  getCurrentScheduleEvent(nowUtcMs: number): ScheduleEvent | null
-}
+  getLiveState(nowUtcMs: number): LiveState;
+  getUpcomingTracks(nowUtcMs: number, count: number): UpcomingTrack[];
+  getCurrentScheduleEvent(nowUtcMs: number): ScheduleEvent | null;
+};
 ```
 
 `LiveState` should include:
 
 ```ts
 type LiveState = {
-  mode: "scheduled" | "default-rotation"
-  trackId: string
-  offsetMs: number
+  mode: 'scheduled' | 'default-rotation';
+  trackId: string;
+  offsetMs: number;
 
-  sourceStartUtcMs: number
-  sourceEndUtcMs?: number
+  sourceStartUtcMs: number;
+  sourceEndUtcMs?: number;
 
-  scheduleEventId?: string
-  playlistVersionId?: string
-  dynamicOccurrenceId?: string
-}
+  scheduleEventId?: string;
+  playlistVersionId?: string;
+  dynamicOccurrenceId?: string;
+};
 ```
 
 ## 15. Required unit tests
@@ -324,4 +324,3 @@ Architecture:
         -> RadioTimelineEngine
 
 This is a core architecture invariant.
-

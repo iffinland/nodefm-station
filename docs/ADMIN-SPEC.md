@@ -269,4 +269,3 @@ Each generated occurrence is stored as its correct UTC interval.
 
 Never implement recurring local-time schedules using a permanently fixed UTC
 offset.
-

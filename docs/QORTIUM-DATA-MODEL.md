@@ -12,10 +12,10 @@ Conceptual reference:
 
 ```ts
 type QdnResourceRef = {
-  service: string
-  name: string
-  identifier?: string
-}
+  service: string;
+  name: string;
+  identifier?: string;
+};
 ```
 
 Add extra fields only when Qortium requires them.
@@ -24,29 +24,29 @@ Add extra fields only when Qortium requires them.
 
 ```ts
 type Station = {
-  schemaVersion: number
-  stationId: string
+  schemaVersion: number;
+  stationId: string;
 
-  name: string
-  description?: string
+  name: string;
+  description?: string;
 
-  ownerName?: string
-  ownerAddress: string
+  ownerName?: string;
+  ownerAddress: string;
 
-  logo?: QdnResourceRef
-  heroImage?: QdnResourceRef
+  logo?: QdnResourceRef;
+  heroImage?: QdnResourceRef;
 
-  timezone: string
-  defaultRotationPlaylistId: string
-  defaultRotationPlaylistVersionId: string
-  stationEpochUtc: string
+  timezone: string;
+  defaultRotationPlaylistId: string;
+  defaultRotationPlaylistVersionId: string;
+  stationEpochUtc: string;
 
-  messagingEnabled: boolean
-  tipsEnabled: boolean
+  messagingEnabled: boolean;
+  tipsEnabled: boolean;
 
-  createdAt: string
-  updatedAt: string
-}
+  createdAt: string;
+  updatedAt: string;
+};
 ```
 
 Rules:
@@ -61,30 +61,28 @@ A station track is metadata plus references to media.
 
 ```ts
 type Track = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  trackId: string
-  ownerAddress: string
+  trackId: string;
+  ownerAddress: string;
 
-  title: string
-  artist?: string
-  description?: string
+  title: string;
+  artist?: string;
+  description?: string;
 
-  audio: QdnResourceRef
-  cover?: QdnResourceRef
+  audio: QdnResourceRef;
+  cover?: QdnResourceRef;
 
-  durationMs: number
+  durationMs: number;
 
-  genres?: string[]
-  tags?: string[]
+  genres?: string[];
+  tags?: string[];
 
-  source:
-    | "station-upload"
-    | "qdn-existing"
+  source: 'station-upload' | 'qdn-existing';
 
-  createdAt: string
-  updatedAt: string
-}
+  createdAt: string;
+  updatedAt: string;
+};
 ```
 
 ### Duration is mandatory for scheduled playback
@@ -99,44 +97,44 @@ Logical playlist:
 
 ```ts
 type Playlist = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  playlistId: string
-  ownerAddress: string
+  playlistId: string;
+  ownerAddress: string;
 
-  title: string
-  description?: string
-  cover?: QdnResourceRef
+  title: string;
+  description?: string;
+  cover?: QdnResourceRef;
 
-  visibility: "public" | "private"
+  visibility: 'public' | 'private';
 
-  latestVersionId: string
+  latestVersionId: string;
 
-  createdAt: string
-  updatedAt: string
-}
+  createdAt: string;
+  updatedAt: string;
+};
 ```
 
 ## 5. Immutable playlist version
 
 ```ts
 type PlaylistVersion = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  playlistId: string
-  versionId: string
-  versionNumber: number
+  playlistId: string;
+  versionId: string;
+  versionNumber: number;
 
-  createdBy: string
-  createdAt: string
+  createdBy: string;
+  createdAt: string;
 
   tracks: Array<{
-    trackId: string
-    durationMs: number
-  }>
+    trackId: string;
+    durationMs: number;
+  }>;
 
-  totalDurationMs: number
-}
+  totalDurationMs: number;
+};
 ```
 
 Schedule events reference `versionId`, never "whatever the playlist currently contains".
@@ -145,28 +143,28 @@ Schedule events reference `versionId`, never "whatever the playlist currently co
 
 ```ts
 type ScheduleEvent = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  eventId: string
-  title?: string
+  eventId: string;
+  title?: string;
 
-  startUtc: string
-  endUtc: string
+  startUtc: string;
+  endUtc: string;
 
   source:
     | {
-        type: "playlist"
-        playlistId: string
-        playlistVersionId: string
+        type: 'playlist';
+        playlistId: string;
+        playlistVersionId: string;
       }
     | {
-        type: "dynamic-program"
-        programDefinitionId: string
-      }
+        type: 'dynamic-program';
+        programDefinitionId: string;
+      };
 
-  createdAt: string
-  updatedAt: string
-}
+  createdAt: string;
+  updatedAt: string;
+};
 ```
 
 Rules:
@@ -181,27 +179,27 @@ Initial implementation: Request Show.
 
 ```ts
 type DynamicProgramDefinition = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  programDefinitionId: string
-  type: "request-show"
+  programDefinitionId: string;
+  type: 'request-show';
 
-  title: string
+  title: string;
 
-  targetDurationMs: number
+  targetDurationMs: number;
 
   ranking: {
-    strategy: "most-liked"
-  }
+    strategy: 'most-liked';
+  };
 
   fallback: {
-    enabled: true
-    source: "station-library"
-    strategy: "deterministic-random"
-  }
+    enabled: true;
+    source: 'station-library';
+    strategy: 'deterministic-random';
+  };
 
-  updatedAt: string
-}
+  updatedAt: string;
+};
 ```
 
 Initial target:
@@ -218,25 +216,25 @@ Before or at occurrence start, resolve it into an immutable lineup:
 
 ```ts
 type DynamicProgramOccurrence = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  occurrenceId: string
-  programDefinitionId: string
-  scheduleEventId: string
+  occurrenceId: string;
+  programDefinitionId: string;
+  scheduleEventId: string;
 
-  startUtc: string
-  endUtc: string
+  startUtc: string;
+  endUtc: string;
 
-  generatedAt: string
+  generatedAt: string;
 
   tracks: Array<{
-    trackId: string
-    durationMs: number
-    source: "liked" | "fallback"
-  }>
+    trackId: string;
+    durationMs: number;
+    source: 'liked' | 'fallback';
+  }>;
 
-  seed: string
-}
+  seed: string;
+};
 ```
 
 Once generated for that occurrence, all listeners must resolve the same lineup.
@@ -249,14 +247,14 @@ Conceptual event/state:
 
 ```ts
 type TrackLike = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  trackId: string
-  userAddress: string
+  trackId: string;
+  userAddress: string;
 
-  liked: boolean
-  updatedAt: string
-}
+  liked: boolean;
+  updatedAt: string;
+};
 ```
 
 The implementation should use an identifier scheme that allows one user's current like state for one track to be resolved safely.
@@ -267,18 +265,18 @@ Aggregate likes are derived from user-specific records or a validated index/cach
 
 ```ts
 type StationNotice = {
-  schemaVersion: number
+  schemaVersion: number;
 
-  noticeId: string
-  title?: string
-  message: string
+  noticeId: string;
+  title?: string;
+  message: string;
 
-  activeFromUtc?: string
-  activeUntilUtc?: string
+  activeFromUtc?: string;
+  activeUntilUtc?: string;
 
-  createdAt: string
-  updatedAt: string
-}
+  createdAt: string;
+  updatedAt: string;
+};
 ```
 
 ## 11. Messages and tips
@@ -352,4 +350,3 @@ Concrete ScheduleEvent resources remain the canonical runtime timeline.
 
 This separation is mandatory because it keeps recurrence and daylight-saving
 logic out of live playback calculations.
-

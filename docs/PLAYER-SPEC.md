@@ -5,9 +5,7 @@
 Use one global audio engine with explicit playback mode.
 
 ```ts
-type PlayerMode =
-  | "LIVE"
-  | "PLAYLIST"
+type PlayerMode = 'LIVE' | 'PLAYLIST';
 ```
 
 The future community music project is separate and should not introduce `PERSONAL` mode here unless the radio product later has a real requirement.

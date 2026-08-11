@@ -1,0 +1,603 @@
+/* ============================================================
+ * NodeFM Station — Base Styles
+ *
+ * Minimal, Qortium Home-compatible foundation styles.
+ * The app inherits Qortium Home's fonts and color scheme via
+ * CSS custom properties when running inside Qortium Home.
+ * ============================================================ */
+
+/* ── Reset ────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  line-height: 1.6;
+  color: #e6e6e6;
+  background: #161616;
+  min-height: 100vh;
+}
+
+a {
+  color: #7db4ff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* ── Layout ───────────────────────────────────────────────────────── */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.layout--public {
+  /* full height for public pages */
+}
+
+.layout__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  height: 3.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.layout__brand-link {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #e6e6e6;
+  text-decoration: none;
+}
+
+.layout__brand-link:hover {
+  color: #fff;
+  text-decoration: none;
+}
+
+.layout__nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.layout__nav-link {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  color: rgba(230, 230, 230, 0.7);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.layout__nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e6e6;
+  text-decoration: none;
+}
+
+.layout__nav-link--active {
+  background: rgba(125, 180, 255, 0.12);
+  color: #7db4ff;
+}
+
+.layout__main {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── Player Bar ───────────────────────────────────────────────────── */
+
+.layout__player-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1.5rem;
+  height: 3.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.player-bar__info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.player-bar__status {
+  background: #e53e3e;
+  color: #fff;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.player-bar__track {
+  color: rgba(230, 230, 230, 0.6);
+}
+
+.player-bar__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.player-bar__btn {
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6e6e6;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-bar__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.player-bar__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Admin Layout ─────────────────────────────────────────────────── */
+
+.layout--admin {
+  flex-direction: row;
+}
+
+.admin__sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  min-height: 100vh;
+}
+
+.admin__sidebar-brand {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin__sidebar-link {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e6e6e6;
+  text-decoration: none;
+}
+
+.admin__nav {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 0;
+  flex: 1;
+}
+
+.admin__nav-link {
+  padding: 0.5rem 1.25rem;
+  color: rgba(230, 230, 230, 0.7);
+  font-size: 0.9rem;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  border-left: 3px solid transparent;
+}
+
+.admin__nav-link:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6e6e6;
+  text-decoration: none;
+}
+
+.admin__nav-link--active {
+  background: rgba(125, 180, 255, 0.08);
+  color: #7db4ff;
+  border-left-color: #7db4ff;
+}
+
+.admin__sidebar-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin__back-link {
+  font-size: 0.85rem;
+  color: rgba(230, 230, 230, 0.5);
+}
+
+.admin__main {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 960px;
+}
+
+/* ── Page Shell ───────────────────────────────────────────────────── */
+
+.page-shell {
+  /* wrapper for page content */
+}
+
+.page-shell__title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  color: #e6e6e6;
+}
+
+.page-shell__content {
+  /* content area */
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────── */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
+}
+
+.button:disabled,
+.button[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.button--primary {
+  background: #7db4ff;
+  color: #161616;
+}
+
+.button--primary:hover:not(:disabled):not([aria-disabled='true']) {
+  background: #6da3ef;
+}
+
+.button--secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6e6e6;
+}
+
+.button--secondary:hover:not(:disabled):not([aria-disabled='true']) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ── Loading State ────────────────────────────────────────────────── */
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  gap: 1rem;
+}
+
+.loading-state--overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(22, 22, 22, 0.85);
+  z-index: 100;
+}
+
+.loading-state__spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #7db4ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-state__message {
+  color: rgba(230, 230, 230, 0.6);
+  font-size: 0.9rem;
+}
+
+/* ── Error State ──────────────────────────────────────────────────── */
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 1rem;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.error-state__icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: rgba(229, 62, 62, 0.15);
+  color: #e53e3e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.error-state__message {
+  color: #e6e6e6;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.error-state__detail {
+  color: rgba(230, 230, 230, 0.5);
+  font-size: 0.85rem;
+  max-width: 400px;
+}
+
+.error-state__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* ── Radio Page ───────────────────────────────────────────────────── */
+
+.radio-page {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.now-playing__cover {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.now-playing__cover-placeholder {
+  font-size: 3rem;
+  color: rgba(230, 230, 230, 0.2);
+}
+
+.radio-page__now-playing {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.now-playing__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.now-playing__title {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.now-playing__artist {
+  color: rgba(230, 230, 230, 0.6);
+  font-size: 1rem;
+}
+
+.now-playing__live-badge {
+  display: inline-block;
+  background: #e53e3e;
+  color: #fff;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  width: fit-content;
+}
+
+.radio-page__placeholder,
+.playlists-page__placeholder,
+.about-page__placeholder,
+.admin-dashboard__hint,
+.admin-dashboard__action-placeholder,
+.admin-library__placeholder,
+.admin-playlists__placeholder,
+.admin-playlist-editor__placeholder,
+.admin-schedule__placeholder,
+.admin-messages__placeholder,
+.admin-station-settings__placeholder {
+  color: rgba(230, 230, 230, 0.35);
+  font-style: italic;
+}
+
+/* ── Admin Dashboard ──────────────────────────────────────────────── */
+
+.admin-dashboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.admin-dashboard__card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.admin-dashboard__card h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(230, 230, 230, 0.5);
+  margin-bottom: 0.5rem;
+}
+
+.admin-dashboard__value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #7db4ff;
+}
+
+.admin-dashboard__actions {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.admin-dashboard__actions h3 {
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-dashboard__action-list {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-dashboard__action-placeholder {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(230, 230, 230, 0.35);
+  font-size: 0.85rem;
+}
+
+/* ── Toolbars ─────────────────────────────────────────────────────── */
+
+.admin-library__toolbar,
+.admin-playlists__toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* ── Placeholder text ─────────────────────────────────────────────── */
+
+.admin-playlists__hint {
+  color: rgba(230, 230, 230, 0.4);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+/* ── About Page ───────────────────────────────────────────────────── */
+
+.about-page {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.about-page__info h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.about-page__info p {
+  color: rgba(230, 230, 230, 0.7);
+  line-height: 1.7;
+  max-width: 600px;
+}
+
+.about-page__notices h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .layout--admin {
+    flex-direction: column;
+  }
+
+  .admin__sidebar {
+    width: 100%;
+    min-height: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .admin__nav {
+    flex-direction: row;
+    padding: 0;
+  }
+
+  .admin__nav-link {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+  }
+
+  .admin__nav-link--active {
+    border-left-color: transparent;
+    border-bottom-color: #7db4ff;
+  }
+
+  .admin__sidebar-brand,
+  .admin__sidebar-footer {
+    display: none;
+  }
+
+  .radio-page__now-playing {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
