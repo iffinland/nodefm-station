@@ -2,9 +2,13 @@
  * NodeFM Station — Public Layout
  *
  * Public-facing layout with navigation header and player bar.
+ * Shows an Admin link when the authenticated user is the
+ * station owner (Phase 2 bootstrap or Phase 3 station config).
+ * AdminGuard remains the actual authorization gate.
  * ============================================================ */
 
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from './providers/authContext';
 
 const PUBLIC_NAV = [
   { to: '/', label: 'Radio' },
@@ -14,6 +18,7 @@ const PUBLIC_NAV = [
 
 export function Layout() {
   const location = useLocation();
+  const { isOwner } = useAuth();
 
   return (
     <div className="layout layout--public">
@@ -33,6 +38,14 @@ export function Layout() {
               {label}
             </Link>
           ))}
+          {isOwner && (
+            <Link
+              to="/admin"
+              className={`layout__nav-link${location.pathname.startsWith('/admin') ? ' layout__nav-link--active' : ''}`}
+            >
+              Admin
+            </Link>
+          )}
         </nav>
       </header>
 

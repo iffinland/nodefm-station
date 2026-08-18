@@ -1,11 +1,15 @@
-# NodeFM Station — Phase 0 Specification
+# NodeFM Station
 
-Status: **Architecture / specification only**
+Status: **Phase 2 implemented — pending embedded Qortium Home owner validation**
 Application name: **NodeFM**
 Priority: **Scheduled Auto-DJ radio station**
 Future Q-Music/community platform: **separate project, explicitly out of scope**
 
 This package is the authoritative starting point for a new Qortium-native radio dApp built from scratch.
+
+Implementation status is tracked in `docs/ROADMAP.md`. The Phase 0 documents
+below remain the authoritative product, architecture, data-model, timeline,
+player, and admin contracts.
 
 ## Core product idea
 

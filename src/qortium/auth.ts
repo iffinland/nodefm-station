@@ -19,6 +19,7 @@ export type AuthState =
 
 let cachedAuthState: AuthState = { status: 'loading' };
 let authResolvePromise: Promise<AuthState> | null = null;
+let authResolveEpoch = 0;
 
 /**
  * Resolve the current authenticated user from Qortium Home.
@@ -33,20 +34,42 @@ export async function resolveAuth(): Promise<AuthState> {
     return authResolvePromise;
   }
 
-  authResolvePromise = resolveAuthInternal();
+  const epoch = authResolveEpoch;
 
-  try {
-    cachedAuthState = await authResolvePromise;
-    return cachedAuthState;
-  } finally {
-    authResolvePromise = null;
-  }
+  authResolvePromise = resolveAuthInternal()
+    .then((state) => {
+      if (epoch === authResolveEpoch) {
+        cachedAuthState = state;
+      }
+
+      return state;
+    })
+    .finally(() => {
+      if (epoch === authResolveEpoch) {
+        authResolvePromise = null;
+      }
+    });
+
+  return authResolvePromise;
+}
+
+/** Error messages from Home that mean "no account selected" rather than a failure. */
+const NO_ACCOUNT_MESSAGES = ['No account is selected for this tab.', 'No account is selected'];
+
+function isNoAccountError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return NO_ACCOUNT_MESSAGES.some((msg) => error.message.includes(msg));
 }
 
 async function resolveAuthInternal(): Promise<AuthState> {
   try {
     const account = (await getSelectedAccount()) as
-      { address?: string; name?: string } | null | undefined;
+      | {
+          address?: string;
+          name?: string;
+        }
+      | null
+      | undefined;
 
     if (!account || !account.address) {
       return { status: 'unauthenticated' };
@@ -58,6 +81,12 @@ async function resolveAuthInternal(): Promise<AuthState> {
       name: account.name,
     };
   } catch (error) {
+    // Map "no selected account" to unauthenticated instead of error.
+    // This is a normal state when the user hasn't selected an account in Home.
+    if (isNoAccountError(error)) {
+      return { status: 'unauthenticated' };
+    }
+
     return {
       status: 'error',
       message: error instanceof Error ? error.message : 'Failed to resolve authentication.',
@@ -67,6 +96,7 @@ async function resolveAuthInternal(): Promise<AuthState> {
 
 /** Force re-fetch of auth state. */
 export function refreshAuth(): void {
+  authResolveEpoch += 1;
   cachedAuthState = { status: 'loading' };
   authResolvePromise = null;
 }
@@ -82,6 +112,11 @@ export function isStationOwner(userAddress: string | null, ownerAddress: string 
 }
 
 // ── Account Change Listener ─────────────────────────────────────────
+//
+// Home sends `qortium:selected-account-changed` via postMessage when
+// the selected account changes or the wallet lock state changes.
+// The event is a signal only — no account data is included.
+// Apps must re-call GET_SELECTED_ACCOUNT after receiving it.
 
 export function listenForAccountChanges(onChange: () => void): () => void {
   const handler = (event: MessageEvent) => {

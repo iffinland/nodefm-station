@@ -1,20 +1,28 @@
 /* ============================================================
  * NodeFM Station — Qortium Bridge Types
  *
- * Types for the Qortium Home ↔ Q-App bridge communication.
- * Validated against Qortium Home reference implementation.
+ * Types for Qortium Home ↔ Q-App integration.
+ * Based on the proven working patterns in:
+ *   discussion-boards-reference (qortiumClient.ts)
+ *   qortium-boards (qdnRequest.ts)
+ *
+ * Bridge transport types (BridgeResolution, BridgeSource,
+ * BridgeErrorCode) are defined in bridge.ts alongside the
+ * implementation to keep the transport layer self-contained.
  * ============================================================ */
 
-// ── Bridge Request ──────────────────────────────────────────────────
+// ── QDN Request Actions ─────────────────────────────────────────────
 
 /** QDN request actions supported by the Qortium Home bridge */
 export type QdnRequestAction =
   | 'FETCH_QDN_RESOURCE'
   | 'SEARCH_QDN_RESOURCES'
+  | 'LIST_QDN_RESOURCES'
   | 'GET_QDN_RESOURCE_STATUS'
   | 'GET_QDN_RESOURCE_PROPERTIES'
   | 'GET_QDN_RESOURCE_METADATA'
   | 'GET_QDN_RESOURCE_URL'
+  | 'GET_QDN_RESOURCE_STREAM_URL'
   | 'GET_SELECTED_ACCOUNT'
   | 'GET_ACCOUNT_NAMES'
   | 'GET_NAME_DATA'
@@ -22,28 +30,10 @@ export type QdnRequestAction =
   | 'GET_BALANCE'
   | 'GET_HOME_SETTINGS'
   | 'FETCH_NODE_API'
-  | 'PUBLISH_QDN_RESOURCE';
-
-export type QdnBridgeRequest = {
-  action: QdnRequestAction;
-  [key: string]: unknown;
-};
-
-export type QdnBridgeMessage = {
-  type: 'qortium:qdn-request';
-  requestId: string;
-  request: QdnBridgeRequest;
-  bridgeToken?: unknown;
-};
-
-// ── Bridge Response ─────────────────────────────────────────────────
-
-export type QdnBridgeResponse = {
-  type: 'qortium:qdn-response';
-  requestId: string;
-  response?: unknown;
-  error?: string;
-};
+  | 'PUBLISH_QDN_RESOURCE'
+  | 'PUBLISH_MULTIPLE_QDN_RESOURCES'
+  | 'DELETE_QDN_RESOURCE'
+  | 'SELECT_QDN_PUBLISH_SOURCE';
 
 // ── Home Display Settings ───────────────────────────────────────────
 
@@ -73,6 +63,10 @@ export type HomeSettingsChangedMessage = {
 };
 
 // ── Account Changed Message ─────────────────────────────────────────
+//
+// Home sends this postMessage to the frame when the selected account
+// changes. The event is a signal only — apps must re-call
+// GET_SELECTED_ACCOUNT after receiving it.
 
 export type AccountChangedMessage = {
   type: 'qortium:selected-account-changed';
@@ -101,14 +95,14 @@ export type QdnResourceLocator = {
 
 // ── Auth / Account ──────────────────────────────────────────────────
 
+/**
+ * Shape of GET_SELECTED_ACCOUNT response from Qortium Home.
+ * Validated against platform.ts:getSelectedAccountForQdnApp.
+ */
 export type QortiumAccount = {
   address: string;
   name?: string;
+  avatarUrl?: string | null;
+  avatarContract?: unknown;
+  isUnlocked?: boolean;
 };
-
-// ── Bridge Resolution ───────────────────────────────────────────────
-
-export type BridgeSource = 'globalThis' | 'window' | 'parent';
-
-export type BridgeResolution =
-  { status: 'AVAILABLE'; source: BridgeSource } | { status: 'UNAVAILABLE' };

@@ -2,8 +2,13 @@
  * NodeFM Station — App Root
  *
  * Wraps providers + router.
- * The station owner address is resolved from station config.
- * In Phase 1, it's null until config is published (Phase 3).
+ *
+ * Phase 2: stationOwnerAddress is null (no Station config yet).
+ * AuthProvider applies the Phase 2 bootstrap: the authenticated
+ * Qortium selected account becomes the temporary owner.
+ *
+ * Phase 3: when Station config is published with a real
+ * ownerAddress, pass it here and the bootstrap is replaced.
  * ============================================================ */
 
 import { AppProviders } from './providers/AppProviders';

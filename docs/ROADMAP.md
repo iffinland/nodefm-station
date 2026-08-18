@@ -4,7 +4,7 @@ The goal is to use the current low-cost DeepSeek development window efficiently 
 
 ## Phase 0 — Specification
 
-Status: **current**
+Status: **complete**
 
 Deliverables:
 
@@ -21,6 +21,8 @@ Deliverables:
 No production feature implementation before these contracts are reviewed.
 
 ## Phase 1 — Foundation
+
+Status: **implemented (local/automated verified)**
 
 Build:
 
@@ -49,6 +51,8 @@ Exit criteria:
 
 ## Phase 2 — Music Library and Playlists
 
+Status: **implemented — pending embedded Qortium Home owner validation**
+
 Build:
 
 - local audio upload flow;
@@ -68,6 +72,8 @@ Exit criteria:
 - owner can produce a valid published playlist version from QDN-backed tracks.
 
 ## Phase 3 — Core Radio Timeline
+
+Status: **not started**
 
 Build:
 
@@ -90,6 +96,8 @@ Exit criteria:
 - closing/reopening does not reset station sequence.
 
 ## Phase 4 — Scheduler
+
+Status: **not started**
 
 Build:
 
@@ -114,6 +122,8 @@ Exit criteria:
 
 ## Phase 5 — Request Show / Likes
 
+Status: **not started**
+
 Build:
 
 - user-specific track likes;
@@ -135,6 +145,8 @@ Exit criteria:
 
 ## Phase 6 — Social Station Features
 
+Status: **not started**
+
 Build:
 
 - station direct message action;
@@ -147,6 +159,8 @@ Build:
 Use generic recipient abstractions where possible.
 
 ## Phase 7 — Public Playlist Listening
+
+Status: **not started**
 
 Build:
 
@@ -165,6 +179,8 @@ Exit criteria:
 - switching back to live recalculates actual current broadcast state.
 
 ## Phase 8 — Hardening
+
+Status: **not started**
 
 Perform:
 

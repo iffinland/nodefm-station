@@ -1,3 +1,4 @@
+// ── Bridge (transport layer) ──────────────────────────────────────
 export {
   sendBridgeRequest,
   fetchQdnResource,
@@ -5,8 +6,13 @@ export {
   getQdnResourceStatus,
   getHomeSettings,
   getRouterBasename,
+  resolveBridge,
+  isBridgeAvailable,
   QortiumBridgeError,
 } from './bridge';
+export type { BridgeSource, BridgeResolution, BridgeErrorCode } from './bridge';
+
+// ── Auth ──────────────────────────────────────────────────────────
 export {
   resolveAuth,
   refreshAuth,
@@ -15,17 +21,38 @@ export {
   publishQdnResource,
 } from './auth';
 export type { AuthState, PublishResourceInput } from './auth';
+
+// ── Types ─────────────────────────────────────────────────────────
 export type {
   QdnRequestAction,
-  QdnBridgeRequest,
-  QdnBridgeMessage,
-  QdnBridgeResponse,
   HomeDisplaySettings,
   HomeSettingsChangedMessage,
   AccountChangedMessage,
   DisplaySettingMessage,
   QdnResourceLocator,
   QortiumAccount,
-  BridgeSource,
-  BridgeResolution,
 } from './types';
+
+// ── Phase 2 QDN operations ────────────────────────────────────────
+export {
+  publishResource,
+  selectPublishSource,
+  searchQdnResources,
+  listQdnResources,
+  getQdnResourceMetadata,
+  getQdnResourceUrl,
+  ensureQdnResourceReady,
+  requireQdnResourceUrl,
+  decodeQdnResourcePayload,
+  fetchQdnResourceData,
+  deleteQdnResource,
+} from './qdn';
+export type {
+  PublishInput,
+  PublishResult,
+  SelectPublishSourceResult,
+  QdnSearchParams,
+  QdnResourceInfo,
+  QdnResourceMetadata,
+  QdnResourceStatus,
+} from './qdn';

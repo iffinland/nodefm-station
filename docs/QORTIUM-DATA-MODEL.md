@@ -2,7 +2,10 @@
 
 Status: **Domain contract draft**
 
-Important: this document defines domain entities first. Exact Qortium service names, identifiers and publish/search conventions must be validated against the current Qortium implementation before Phase 1 publishing code is finalized.
+Important: this document defines domain entities first. Exact Qortium service
+names, identifiers, and publish/search conventions were validated against the
+current Qortium Home/Core implementation during Phase 2; the concrete Phase 2
+values are noted in the identifier policy below.
 
 ## 1. Resource-reference rule
 
@@ -316,7 +319,14 @@ radio-program-occurrence-
 radio-notice-
 ```
 
-These are not yet canonical Qortium identifier choices.
+These are not yet canonical Qortium identifier choices. Phase 2 currently uses
+these working QDN identifiers:
+
+- `nodefm-track-<trackId>`
+- `nodefm-audio-<id>`
+- `nodefm-cover-<id>`
+- `nodefm-playlist-<playlistId>`
+- `nodefm-playlist-version-<versionId>`
 
 ## 13. Recurring schedule authoring model
 
