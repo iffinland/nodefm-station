@@ -7,6 +7,23 @@ names, identifiers, and publish/search conventions were validated against the
 current Qortium Home/Core implementation during Phase 2; the concrete Phase 2
 values are noted in the identifier policy below.
 
+## Phase 2 verified contracts
+
+Owner embedded Qortium Home validation passed. The following contracts are
+the verified Phase 2 runtime/interface rules, not aspirational:
+
+- QDN publication `name` is the registered Qortium name.
+- NodeFM entity identity is encoded in a unique QDN `identifier`.
+- Audio upload uses native `sourceToken` selection, not browser base64 upload.
+- Resource readiness is confirmed before URL/duration resolution.
+- Track duration is a required positive, trustworthy value.
+- Library/playlist stores and drafts are account-scoped.
+- Track removal tombstones only the track metadata resource; AUDIO/COVER are left intact.
+- Playlist drafts are account-scoped session state and are not published.
+- Immutable PlaylistVersion resources are distinct from logical Playlist resources.
+- Multi-resource discovery uses `mode=ALL`, and reconstruction preserves distinct identifiers.
+- Current-session state and reload reconstruction agree.
+
 ## 1. Resource-reference rule
 
 Whenever an existing QDN audio or cover resource can be reused, prefer storing a reference rather than duplicating media.

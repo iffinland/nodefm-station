@@ -51,7 +51,9 @@ Exit criteria:
 
 ## Phase 2 — Music Library and Playlists
 
-Status: **implemented — pending embedded Qortium Home owner validation**
+Status: **COMPLETE**
+
+Owner embedded Qortium Home validation: **PASSED**
 
 Build:
 
@@ -70,6 +72,10 @@ Build:
 Exit criteria:
 
 - owner can produce a valid published playlist version from QDN-backed tracks.
+
+Phase 2 exit criterion status: **PASSED** — owner live embedded Qortium Home
+evidence confirmed that previously and newly published tracks and playlists
+remain visible after refresh/reopen.
 
 ## Phase 3 — Core Radio Timeline
 

@@ -1,6 +1,8 @@
 # NodeFM Station
 
-Status: **Phase 2 implemented — pending embedded Qortium Home owner validation**
+Status: **Phase 2 — COMPLETE**
+
+Owner embedded Qortium Home validation: **PASSED**
 Application name: **NodeFM**
 Priority: **Scheduled Auto-DJ radio station**
 Future Q-Music/community platform: **separate project, explicitly out of scope**
