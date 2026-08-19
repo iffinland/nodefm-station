@@ -140,6 +140,47 @@ export type ScheduleEvent = {
 
   source: ScheduleEventSource;
 
+  /**
+   * Optional scheduler provenance. Concrete runtime behavior remains
+   * driven only by the immutable UTC interval and source fields above.
+   */
+  recurrenceId?: string;
+  recurrenceInstanceKey?: string;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+// ── Schedule Recurrence (admin intent, never runtime input) ────────
+
+export type ScheduleRecurrenceFrequency = 'daily' | 'weekly';
+
+/**
+ * Recurrence is an admin-side authoring object. The runtime timeline
+ * never consumes this type directly; it is compiled into concrete
+ * ScheduleEvent instances before publication.
+ *
+ * `daysOfWeek` uses the JavaScript/ISO convention:
+ * 0 = Sunday, 1 = Monday, ..., 6 = Saturday.
+ */
+export type ScheduleRecurrence = {
+  schemaVersion: number;
+
+  recurrenceId: string;
+  ownerAddress: string;
+
+  title: string;
+  source: ScheduleEventSource;
+
+  timezone: string;
+  frequency: ScheduleRecurrenceFrequency;
+  localStartTime: string;
+  durationMs: number;
+  daysOfWeek?: number[];
+
+  activeFromLocalDate: string;
+  activeUntilLocalDate?: string;
+
   createdAt: string;
   updatedAt: string;
 };

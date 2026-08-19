@@ -22,6 +22,7 @@ import {
 } from '../../playlists/services/playlistService';
 import { deserializeTrackFromQdn, getTrackQdnIdentifier } from '../../tracks/services/trackService';
 import { isValidPlaylistVersionRecord } from './timelineMath';
+import { loadScheduleEventsForPublisher } from '../../scheduling/services/scheduleStore';
 
 export type RadioTimelineData = {
   station: Station;
@@ -138,7 +139,13 @@ export async function loadRadioTimelineData(
     const dynamicOccurrences: Record<string, DynamicProgramOccurrence> = {};
     const versionIds = new Set<string>([station.defaultRotationPlaylistVersionId]);
 
-    // Phase 4 schedule events will add their referenced version IDs here.
+    const scheduleEvents = await loadScheduleEventsForPublisher(publisherName);
+    for (const event of scheduleEvents) {
+      if (event.source.type === 'playlist') {
+        versionIds.add(event.source.playlistVersionId);
+      }
+    }
+
     for (const versionId of versionIds) {
       const payload = await fetchRecord({
         service: 'JSON',
@@ -172,7 +179,7 @@ export async function loadRadioTimelineData(
 
     timelineData = {
       station,
-      scheduleEvents: [],
+      scheduleEvents,
       playlistVersions,
       dynamicOccurrences,
       tracks,

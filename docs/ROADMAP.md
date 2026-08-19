@@ -112,7 +112,7 @@ scheduler authoring does not exist yet. This is not a Phase 3 blocker.
 
 ## Phase 4 — Scheduler
 
-Status: **not started**
+Status: **COMPLETE**
 
 Build:
 
@@ -134,6 +134,24 @@ Exit criteria:
 
 - a full week can be scheduled visually;
 - active program changes deterministically by clock time.
+
+Phase 4 exit criterion status: **PASSED** — owner embedded Qortium Home
+runtime validation confirmed the scheduler end-to-end chain:
+
+```text
+Scheduler
+    -> concrete ScheduleEvent
+    -> Phase 3 timeline
+    -> AudioEngine
+    -> scheduled playlist playback
+```
+
+Scheduler services, QDN persistence/discovery, timezone/DST compilation,
+Daily/Weekly recurrence authoring, overlap prevention, immutable
+PlaylistVersion selection, week/agenda views, account isolation, and production
+timeline integration are implemented and automated-tested. Minor UI/UX polish
+is deferred to the later global polish/hardening pass and is not a Phase 4
+blocker.
 
 ## Phase 5 — Request Show / Likes
 

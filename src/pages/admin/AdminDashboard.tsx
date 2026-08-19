@@ -8,11 +8,17 @@
 import { PageShell } from '../../components/PageShell';
 import { useLiveRadioPlayerContext } from '../../features/radio/player';
 import { useStation } from '../../features/station';
+import { isValidIanaTimeZone } from '../../features/scheduling/services/timezone';
 
 export default function AdminDashboard() {
   const { timeline } = useLiveRadioPlayerContext();
   const { station } = useStation();
   const liveState = timeline.liveState;
+  const nextEvent = timeline.scheduleEvents
+    .filter((event) => Date.parse(event.startUtc) > timeline.nowUtcMs)
+    .sort((left, right) => Date.parse(left.startUtc) - Date.parse(right.startUtc))[0];
+  const scheduleTimeZone =
+    station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
 
   return (
     <PageShell title={station?.name ?? 'Dashboard'}>
@@ -30,8 +36,16 @@ export default function AdminDashboard() {
           </div>
           <div className="admin-dashboard__card">
             <h3>Next Program</h3>
-            <p className="admin-dashboard__value">—</p>
-            <p className="admin-dashboard__hint">No upcoming scheduled events</p>
+            <p className="admin-dashboard__value">{nextEvent?.title ?? '—'}</p>
+            <p className="admin-dashboard__hint">
+              {nextEvent
+                ? new Intl.DateTimeFormat([], {
+                    timeZone: scheduleTimeZone,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }).format(Date.parse(nextEvent.startUtc))
+                : 'No upcoming scheduled events'}
+            </p>
           </div>
           <div className="admin-dashboard__card">
             <h3>Tracks in Library</h3>

@@ -7,7 +7,7 @@
  * ============================================================ */
 
 import { useMemo } from 'react';
-import type { Track } from '../../../types/domain';
+import type { ScheduleEvent, Track } from '../../../types/domain';
 import {
   getUpcomingTracks,
   resolveLiveState,
@@ -39,6 +39,7 @@ export type UseRadioTimelineResult = {
   liveState: LiveState | null;
   upcoming: UpcomingTrackWithMetadata[];
   upcomingResult: ReturnType<typeof getUpcomingTracks>;
+  scheduleEvents: ScheduleEvent[];
   refreshData: () => Promise<void>;
 };
 
@@ -110,6 +111,7 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
     liveState,
     upcoming,
     upcomingResult,
+    scheduleEvents: dataState.data?.scheduleEvents ?? [],
     refreshData: dataState.refresh,
   };
 }

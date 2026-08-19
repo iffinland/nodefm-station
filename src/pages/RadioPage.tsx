@@ -9,6 +9,7 @@ import { PageShell } from '../components/PageShell';
 import { useLiveRadioPlayerContext } from '../features/radio/player';
 import { useStation } from '../features/station';
 import { formatDurationMs } from '../utils/duration';
+import { isValidIanaTimeZone } from '../features/scheduling/services/timezone';
 
 export default function RadioPage() {
   const { playerState, timeline, playbackError, retry } = useLiveRadioPlayerContext();
@@ -16,6 +17,8 @@ export default function RadioPage() {
   const liveState = timeline.liveState;
   const currentTrack = timeline.currentTrack;
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
+  const scheduleTimeZone =
+    station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
 
   return (
     <PageShell title={station?.name ?? 'NodeFM Radio'}>
@@ -115,7 +118,31 @@ export default function RadioPage() {
         {/* Schedule Section */}
         <section className="radio-page__schedule">
           <h3>Today's Schedule</h3>
-          <p className="radio-page__placeholder">Program schedule will appear here in Phase 4.</p>
+          {timeline.scheduleEvents.length === 0 ? (
+            <p className="radio-page__placeholder">No scheduled programs available.</p>
+          ) : (
+            <ol className="radio-page__upcoming-list">
+              {timeline.scheduleEvents
+                .filter((event) => Date.parse(event.endUtc) > timeline.nowUtcMs)
+                .sort((left, right) => Date.parse(left.startUtc) - Date.parse(right.startUtc))
+                .slice(0, 6)
+                .map((event) => (
+                  <li key={event.eventId}>
+                    <span className="radio-page__upcoming-track">
+                      {event.title ?? 'Scheduled program'}
+                    </span>
+                    <span className="radio-page__upcoming-time">
+                      {new Intl.DateTimeFormat([], {
+                        timeZone: scheduleTimeZone,
+                        weekday: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }).format(Date.parse(event.startUtc))}
+                    </span>
+                  </li>
+                ))}
+            </ol>
+          )}
         </section>
       </div>
     </PageShell>

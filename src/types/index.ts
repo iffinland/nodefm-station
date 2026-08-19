@@ -11,6 +11,8 @@ export type {
   ScheduleEventSource,
   ScheduleEventSourcePlaylist,
   ScheduleEventSourceDynamic,
+  ScheduleRecurrence,
+  ScheduleRecurrenceFrequency,
   DynamicProgramDefinition,
   DynamicProgramRanking,
   DynamicProgramFallback,

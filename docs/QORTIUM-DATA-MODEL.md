@@ -182,6 +182,9 @@ type ScheduleEvent = {
         programDefinitionId: string;
       };
 
+  recurrenceId?: string;
+  recurrenceInstanceKey?: string;
+
   createdAt: string;
   updatedAt: string;
 };
@@ -192,6 +195,10 @@ Rules:
 - `startUtc < endUtc`;
 - normal admin workflow prevents overlapping events;
 - schedule execution is deterministic.
+
+`recurrenceId` and `recurrenceInstanceKey` are optional scheduler provenance
+fields used when an event was generated from recurring admin intent. Runtime
+resolution does not consume recurrence rules; these fields are metadata only.
 
 ## 7. Dynamic program definition
 
@@ -344,6 +351,8 @@ these working QDN identifiers:
 - `nodefm-cover-<id>`
 - `nodefm-playlist-<playlistId>`
 - `nodefm-playlist-version-<versionId>`
+- `nodefm-schedule-<eventId>`
+- `nodefm-schedule-recurrence-<recurrenceId>`
 
 ## 13. Recurring schedule authoring model
 
@@ -353,16 +362,32 @@ A recurrence definition is an admin-side authoring object.
 
 Conceptually:
 
-    type ScheduleRecurrence = {
-      recurrenceId: string
-      timezone: string
-      frequency: "daily" | "weekly"
-      localStartTime: string
-      durationMs: number
-      daysOfWeek?: number[]
-      activeFromLocalDate: string
-      activeUntilLocalDate?: string
-    }
+```ts
+type ScheduleRecurrence = {
+  schemaVersion: number;
+
+  recurrenceId: string;
+  ownerAddress: string;
+
+  title: string;
+  source: ScheduleEventSource;
+
+  timezone: string;
+  frequency: 'daily' | 'weekly';
+  localStartTime: string;
+  durationMs: number;
+  daysOfWeek?: number[];
+
+  activeFromLocalDate: string;
+  activeUntilLocalDate?: string;
+
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+`daysOfWeek` uses the JavaScript/ISO convention: `0` = Sunday through
+`6` = Saturday.
 
 This object must not be consumed directly by RadioTimelineEngine.
 

@@ -9,9 +9,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../qortium/qdn', () => ({
   fetchQdnResourceData: vi.fn(),
+  searchQdnResources: vi.fn(),
+  publishResource: vi.fn(),
+  deleteQdnResource: vi.fn(),
 }));
 
-import { fetchQdnResourceData } from '../qortium/qdn';
+import { fetchQdnResourceData, searchQdnResources } from '../qortium/qdn';
 import { createPlaylistVersion } from '../features/playlists/services/playlistService';
 import { getPlaylistVersionQdnIdentifier } from '../features/playlists/services/playlistService';
 import { getTrackQdnIdentifier } from '../features/tracks/services/trackService';
@@ -25,6 +28,7 @@ import {
 import type { Station } from '../types/domain';
 
 const mockedFetch = vi.mocked(fetchQdnResourceData);
+const mockedSearch = vi.mocked(searchQdnResources);
 
 const station: Station = {
   schemaVersion: 1,
@@ -73,6 +77,8 @@ describe('radio timeline data store', () => {
   beforeEach(() => {
     resetRadioTimelineData();
     mockedFetch.mockReset();
+    mockedSearch.mockReset();
+    mockedSearch.mockResolvedValue([]);
   });
 
   it('loads the default immutable version and referenced track metadata', async () => {
