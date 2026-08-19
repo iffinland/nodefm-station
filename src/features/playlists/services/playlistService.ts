@@ -12,6 +12,8 @@ import { isValidDurationMs, calculateTotalDurationMs } from '../../../utils/dura
 import { isRecord } from '../../../utils/record';
 import { isNonEmptyTrimmedString } from '../../../utils/validation';
 
+export const PLAYLIST_QDN_SERVICE = 'PLAYLIST';
+
 // ── Playlist Creation ───────────────────────────────────────────────
 
 export type CreatePlaylistInput = {

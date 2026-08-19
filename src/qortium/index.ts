@@ -56,3 +56,16 @@ export type {
   QdnResourceMetadata,
   QdnResourceStatus,
 } from './qdn';
+
+// ── Navigation / QDN addresses ─────────────────────────────────────
+export { getCurrentQdnAppIdentity, buildQdnUrl, openQdnAddress } from './navigation';
+export type { QdnHostGlobals, OpenTabTarget } from './navigation';
+
+// ── Social bridge write paths ─────────────────────────────────────
+export { sendDirectChatMessage, sendNativeTip } from './social';
+export type {
+  DirectChatMessageInput,
+  DirectChatMessageResult,
+  NativeTipInput,
+  NativeTipResult,
+} from './social';

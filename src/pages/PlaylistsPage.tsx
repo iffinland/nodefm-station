@@ -10,6 +10,8 @@ import { PageShell } from '../components/PageShell';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { useStation } from '../features/station';
+import { ShareModal } from '../features/sharing';
+import type { ShareTargetInput } from '../features/sharing';
 import {
   loadPublicPlaylists,
   type PublicPlaylist,
@@ -20,6 +22,7 @@ export default function PlaylistsPage() {
   const [playlists, setPlaylists] = useState<PublicPlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTargetInput | null>(null);
 
   const load = useCallback(async (name: string) => {
     setLoading(true);
@@ -82,6 +85,21 @@ export default function PlaylistsPage() {
                       Public station playlist
                     </span>
                   </div>
+                  <div className="public-playlist-card__actions">
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() =>
+                        setShareTarget({
+                          kind: 'playlist',
+                          publisherName: playlist.publisherName,
+                          playlistId: playlist.playlistId,
+                        })
+                      }
+                    >
+                      Share
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -90,6 +108,7 @@ export default function PlaylistsPage() {
             </p>
           </>
         )}
+        {shareTarget && <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />}
       </div>
     </PageShell>
   );

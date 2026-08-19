@@ -11,6 +11,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { useStation } from '../../features/station';
 import { usePlaylists } from '../../hooks/usePlaylists';
+import { NoticeAdminPanel } from '../../features/notices/components';
 
 function toLocalDateTimeInputValue(utcIso: string): string {
   const date = new Date(utcIso);
@@ -261,6 +262,7 @@ export default function StationSettingsPage() {
             </button>
           </div>
         </div>
+        <NoticeAdminPanel />
       </div>
     </PageShell>
   );

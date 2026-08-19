@@ -188,7 +188,7 @@ polish/hardening phase.
 
 ## Phase 6 — Social Station Features
 
-Status: **not started**
+Status: **COMPLETE**
 
 Build:
 
@@ -200,6 +200,39 @@ Build:
 - public station information.
 
 Use generic recipient abstractions where possible.
+
+Exit criteria:
+
+- all Phase 6 features implemented;
+- production-path tests passing;
+- reference-first Qortium contracts verified;
+- no BLOCKER/HIGH adversarial findings;
+- owner embedded runtime validation passed.
+
+Phase 6 exit criterion status: **PASSED** — owner embedded Qortium Home
+validation confirmed direct messages to the station owner, native tip/donation
+flow, share app/public-playlist links, station notices and owner notice
+management, public station information, account isolation, social modal
+interaction, and stable LIVE playback during social actions.
+
+Owner embedded Qortium Home validation: **PASSED**.
+
+Verified Phase 6 architecture:
+
+- `SEND_CHAT_MESSAGE` direct-recipient integration;
+- `SEND_COIN` native tip integration through Home's normal approval path;
+- canonical `qdn://` app/playlist sharing;
+- `nodefm-notice-*` JSON QDN notice resources;
+- `SEARCH_QDN_RESOURCES` mode `ALL` for notice discovery;
+- owner authorization enforced in the production notice store;
+- Home-selected account identity;
+- no duplicate NodeFM inbox;
+- no custom chat/transaction wire protocol;
+- no automatic payment retry;
+- explicit failure/cancel states.
+
+Minor visual/UI polish remains deferred to the later project-wide
+hardening/polish phase.
 
 ## Phase 7 — Public Playlist Listening
 

@@ -484,6 +484,14 @@ button {
   margin-top: 0.35rem;
 }
 
+.now-playing__social-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
 .now-playing__error {
   color: #e53e3e;
   font-size: 0.85rem;
@@ -534,6 +542,12 @@ button {
   font-style: italic;
 }
 
+.admin-messages__hint {
+  color: rgba(230, 230, 230, 0.65);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
 /* ── Public Playlists ─────────────────────────────────────────────── */
 
 .public-playlists__list {
@@ -558,6 +572,12 @@ button {
   gap: 0.3rem;
 }
 
+.public-playlist-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
 .public-playlist-card__title {
   font-size: 1rem;
   font-weight: 600;
@@ -580,6 +600,139 @@ button {
   font-size: 0.8rem;
   font-style: italic;
   margin-top: 1rem;
+}
+
+/* ── Station Notices ──────────────────────────────────────────────── */
+
+.station-notices {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.station-notices h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(230, 230, 230, 0.5);
+  margin-bottom: 0.75rem;
+}
+
+.station-notices__muted {
+  color: rgba(230, 230, 230, 0.45);
+  font-size: 0.9rem;
+}
+
+.station-notices__error {
+  color: #e53e3e;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.station-notices__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.station-notice-card {
+  background: rgba(255, 255, 255, 0.035);
+  border-left: 3px solid #7db4ff;
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.station-notice-card__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.station-notice-card__message {
+  color: rgba(230, 230, 230, 0.8);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* ── Social Modals ────────────────────────────────────────────────── */
+
+.social-modal__recipient {
+  color: rgba(230, 230, 230, 0.75);
+  margin-bottom: 1rem;
+}
+
+.share-modal__hint {
+  color: rgba(230, 230, 230, 0.65);
+  margin-bottom: 1rem;
+}
+
+.share-modal__unavailable {
+  color: #e53e3e;
+  font-size: 0.9rem;
+}
+
+/* ── Notice Admin ─────────────────────────────────────────────────── */
+
+.notice-admin {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.notice-admin__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.notice-admin__header h2 {
+  font-size: 1.05rem;
+}
+
+.notice-admin__muted {
+  color: rgba(230, 230, 230, 0.45);
+  font-style: italic;
+}
+
+.notice-admin__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.notice-admin__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.notice-admin__item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.notice-admin__item-body span {
+  color: rgba(230, 230, 230, 0.6);
+  font-size: 0.85rem;
+}
+
+.notice-admin__item-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 /* ── Admin Dashboard ──────────────────────────────────────────────── */

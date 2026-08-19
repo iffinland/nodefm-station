@@ -13,6 +13,10 @@ import { useLikes } from '../features/likes/useLikes';
 import { formatDurationMs } from '../utils/duration';
 import { isValidIanaTimeZone } from '../features/scheduling/services/timezone';
 import { useState } from 'react';
+import { MessageOwnerModal } from '../features/messaging';
+import { TipOwnerModal } from '../features/tips';
+import { ShareModal } from '../features/sharing';
+import { StationNotices } from '../features/notices/components';
 
 export default function RadioPage() {
   const { playerState, timeline, playbackError, retry } = useLiveRadioPlayerContext();
@@ -30,6 +34,9 @@ export default function RadioPage() {
     incomplete: likesIncomplete,
   } = useLikes(currentTrackId ? [currentTrackId] : []);
   const [likeError, setLikeError] = useState<string | null>(null);
+  const [messageOpen, setMessageOpen] = useState(false);
+  const [tipOpen, setTipOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
   const scheduleTimeZone =
     station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
@@ -108,6 +115,33 @@ export default function RadioPage() {
                 )}
               </div>
             )}
+            {station && (
+              <div className="now-playing__social-actions">
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setMessageOpen(true)}
+                  title={station.messagingEnabled ? undefined : 'Station messaging is disabled.'}
+                >
+                  Message Owner
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setTipOpen(true)}
+                  title={station.tipsEnabled ? undefined : 'Station tips/donations are disabled.'}
+                >
+                  Tip Owner
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                >
+                  Share
+                </button>
+              </div>
+            )}
             {playbackError && (
               <p className="now-playing__error">
                 {playbackError}{' '}
@@ -141,6 +175,8 @@ export default function RadioPage() {
             )}
           </div>
         </section>
+
+        <StationNotices nowUtcMs={timeline.nowUtcMs} />
 
         {/* Upcoming Section */}
         <section className="radio-page__upcoming">
@@ -199,6 +235,11 @@ export default function RadioPage() {
           )}
         </section>
       </div>
+      {station && messageOpen && (
+        <MessageOwnerModal station={station} onClose={() => setMessageOpen(false)} />
+      )}
+      {station && tipOpen && <TipOwnerModal station={station} onClose={() => setTipOpen(false)} />}
+      {shareOpen && <ShareModal target={{ kind: 'app' }} onClose={() => setShareOpen(false)} />}
     </PageShell>
   );
 }
