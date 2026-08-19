@@ -8,17 +8,49 @@
 import { PageShell } from '../components/PageShell';
 import { useLiveRadioPlayerContext } from '../features/radio/player';
 import { useStation } from '../features/station';
+import { useAuth } from '../app/providers/authContext';
+import { useLikes } from '../features/likes/useLikes';
 import { formatDurationMs } from '../utils/duration';
 import { isValidIanaTimeZone } from '../features/scheduling/services/timezone';
+import { useState } from 'react';
 
 export default function RadioPage() {
   const { playerState, timeline, playbackError, retry } = useLiveRadioPlayerContext();
   const { station, loading: stationLoading, refresh: refreshStation } = useStation();
+  const { auth } = useAuth();
   const liveState = timeline.liveState;
   const currentTrack = timeline.currentTrack;
+  const currentTrackId = currentTrack?.trackId ?? '';
+  const {
+    isLiked,
+    getLikeCount,
+    toggleLike,
+    loading: likesLoading,
+    error: likesLoadError,
+    incomplete: likesIncomplete,
+  } = useLikes(currentTrackId ? [currentTrackId] : []);
+  const [likeError, setLikeError] = useState<string | null>(null);
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
   const scheduleTimeZone =
     station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
+
+  const handleLike = async () => {
+    if (!currentTrackId) {
+      return;
+    }
+
+    if (auth.status !== 'authenticated') {
+      setLikeError('Select a Qortium account to Like tracks.');
+      return;
+    }
+
+    try {
+      setLikeError(null);
+      await toggleLike(currentTrackId);
+    } catch (error) {
+      setLikeError(error instanceof Error ? error.message : 'Failed to update Like.');
+    }
+  };
 
   return (
     <PageShell title={station?.name ?? 'NodeFM Radio'}>
@@ -53,6 +85,28 @@ export default function RadioPage() {
               <p className="now-playing__track-time">
                 {formatDurationMs(currentTrack.durationMs)} track duration
               </p>
+            )}
+            {currentTrack && (
+              <div className="now-playing__like">
+                <button
+                  className={`button ${isLiked(currentTrack.trackId) ? 'button--primary' : 'button--secondary'}`}
+                  type="button"
+                  onClick={handleLike}
+                  disabled={likesLoading}
+                >
+                  {isLiked(currentTrack.trackId) ? 'Liked' : 'Like'} ·{' '}
+                  {getLikeCount(currentTrack.trackId)}
+                </button>
+                {likeError && <p className="now-playing__error">{likeError}</p>}
+                {likesLoadError && (
+                  <p className="now-playing__error">Like data unavailable: {likesLoadError}</p>
+                )}
+                {likesIncomplete && (
+                  <p className="now-playing__error">
+                    Like data is incomplete and may not reflect all Likes.
+                  </p>
+                )}
+              </div>
             )}
             {playbackError && (
               <p className="now-playing__error">

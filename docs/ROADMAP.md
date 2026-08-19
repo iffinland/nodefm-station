@@ -155,7 +155,7 @@ blocker.
 
 ## Phase 5 — Request Show / Likes
 
-Status: **not started**
+Status: **COMPLETE**
 
 Build:
 
@@ -175,6 +175,16 @@ Build:
 Exit criteria:
 
 - scheduled Request Show always fills the program window as well as available track durations allow and never depends on per-client random choice.
+
+Phase 5 exit criterion status: **PASSED** — owner embedded Qortium Home
+validation confirmed Like/Unlike behavior, per-account Like state, account
+switching, Request Show definition/scheduling, generated occurrence
+determinism, reload/reopen persistence, and Request Show playback integration.
+
+Owner embedded Qortium Home validation: **PASSED**.
+
+Minor visual/UI polish remains intentionally deferred to the later global
+polish/hardening phase.
 
 ## Phase 6 — Social Station Features
 

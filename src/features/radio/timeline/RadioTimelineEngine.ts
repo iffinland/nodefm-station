@@ -282,7 +282,9 @@ function resolveDynamicSource(
   if (
     occurrenceStart !== eventStart ||
     occurrenceEnd !== eventEnd ||
-    occurrence.tracks.length === 0
+    occurrence.tracks.length === 0 ||
+    (scheduleEvent.source.type === 'dynamic-program' &&
+      occurrence.programDefinitionId !== scheduleEvent.source.programDefinitionId)
   ) {
     return {
       status: 'error',

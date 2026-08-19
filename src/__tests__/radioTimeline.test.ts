@@ -529,6 +529,24 @@ describe('dynamic program occurrence timeline', () => {
       code: 'invalid-dynamic-occurrence',
     });
   });
+
+  it('rejects an occurrence that references a different dynamic program', () => {
+    const ctx = input({
+      scheduleEvents: [event],
+      playlistVersions: {},
+      dynamicOccurrences: {
+        'occurrence-1': {
+          ...occurrence,
+          programDefinitionId: 'different-request-show',
+        },
+      },
+    });
+
+    expect(resolveLiveState(EPOCH + 1_500_000, ctx)).toMatchObject({
+      status: 'error',
+      code: 'invalid-dynamic-occurrence',
+    });
+  });
 });
 
 describe('upcoming track resolution', () => {

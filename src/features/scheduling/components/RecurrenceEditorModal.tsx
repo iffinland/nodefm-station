@@ -2,16 +2,24 @@
  * NodeFM Station — Recurrence Editor Modal
  *
  * Authors Daily/Weekly admin intent, compiles it into concrete
- * UTC ScheduleEvents, and persists both the intent resource and
- * the canonical event resources through the scheduler store.
+ * UTC ScheduleEvents, and materializes Request Show occurrences
+ * for dynamic-program sources.
  * ============================================================ */
 
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import { useStation } from '../../station';
 import { usePlaylists } from '../../../hooks/usePlaylists';
+import { useLibrary } from '../../../hooks/useLibrary';
+import { useAuth } from '../../../app/providers/authContext';
+import { useLikes } from '../../likes/useLikes';
+import { useRequestShow } from '../../dynamic-programs/request-show/useRequestShow';
+import { materializeRequestShowOccurrenceAction } from '../../dynamic-programs/request-show/requestShowStore';
 import { useScheduler } from '../hooks/useScheduler';
-import type { ScheduleRecurrence } from '../../../types/domain';
+import { compileScheduleRecurrence } from '../services/recurrenceCompiler';
+import { getNowUtcMs } from '../../radio/timeline';
+import type { ScheduleRecurrence, Track } from '../../../types/domain';
+import { isValidDurationMs } from '../../../utils/duration';
 
 const DAY_OPTIONS = [
   { value: 0, label: 'Sun' },
@@ -29,10 +37,33 @@ export type RecurrenceEditorModalProps = {
   onClose: () => void;
 };
 
+function rankFromAggregates(
+  tracks: readonly Track[],
+  aggregates: Record<string, { count: number }>,
+) {
+  return tracks
+    .filter((track) => (aggregates[track.trackId]?.count ?? 0) > 0)
+    .map((track) => ({
+      trackId: track.trackId,
+      likeCount: aggregates[track.trackId]?.count ?? 0,
+      likerAddresses: [] as string[],
+    }))
+    .sort((left, right) => {
+      if (right.likeCount !== left.likeCount) {
+        return right.likeCount - left.likeCount;
+      }
+
+      return left.trackId.localeCompare(right.trackId);
+    });
+}
+
 export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceEditorModalProps) {
   const { station } = useStation();
   const { playlists, getVersions } = usePlaylists();
   const { createRecurrence, updateRecurrence } = useScheduler();
+  const { ownerName } = useAuth();
+  const { tracks: libraryTracks, loaded: libraryLoaded, loading: libraryLoading } = useLibrary();
+  const { definitions, loaded: requestShowLoaded, loading: requestShowLoading } = useRequestShow();
   const timeZone = station?.timezone ?? '';
 
   const [title, setTitle] = useState('');
@@ -42,10 +73,24 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
   const [activeFrom, setActiveFrom] = useState('');
   const [activeUntil, setActiveUntil] = useState('');
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [sourceType, setSourceType] = useState<'playlist' | 'dynamic-program'>('playlist');
   const [playlistId, setPlaylistId] = useState('');
   const [versionId, setVersionId] = useState('');
+  const [programDefinitionId, setProgramDefinitionId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const eligibleTracks = useMemo(
+    () => libraryTracks.filter((track) => isValidDurationMs(track.durationMs)),
+    [libraryTracks],
+  );
+  const trackIds = useMemo(() => eligibleTracks.map((track) => track.trackId), [eligibleTracks]);
+  const {
+    aggregates,
+    ready: likesReady,
+    loading: likesLoading,
+    incomplete: likesIncomplete,
+  } = useLikes(trackIds);
 
   useEffect(() => {
     if (!timeZone) {
@@ -60,10 +105,16 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
       setActiveFrom(recurrence.activeFromLocalDate);
       setActiveUntil(recurrence.activeUntilLocalDate ?? '');
       setDaysOfWeek(recurrence.daysOfWeek ?? []);
+      setSourceType(recurrence.source.type);
 
       if (recurrence.source.type === 'playlist') {
         setPlaylistId(recurrence.source.playlistId);
         setVersionId(recurrence.source.playlistVersionId);
+        setProgramDefinitionId('');
+      } else {
+        setPlaylistId('');
+        setVersionId('');
+        setProgramDefinitionId(recurrence.source.programDefinitionId);
       }
       return;
     }
@@ -77,6 +128,10 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
       }).format(new Date()),
     );
     setDaysOfWeek([]);
+    setSourceType('playlist');
+    setPlaylistId('');
+    setVersionId('');
+    setProgramDefinitionId('');
   }, [recurrence, timeZone]);
 
   const versions = useMemo(
@@ -96,11 +151,6 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
       return;
     }
 
-    if (!playlistId || !versionId) {
-      setError('Select a playlist and an immutable published version.');
-      return;
-    }
-
     if (!title.trim()) {
       setError('Program title is required.');
       return;
@@ -111,14 +161,23 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
       return;
     }
 
+    if (sourceType === 'playlist' && (!playlistId || !versionId)) {
+      setError('Select a playlist and an immutable published version.');
+      return;
+    }
+
+    if (sourceType === 'dynamic-program' && !programDefinitionId) {
+      setError('Select a Request Show definition.');
+      return;
+    }
+
     try {
       const input = {
         title: title.trim(),
-        source: {
-          type: 'playlist' as const,
-          playlistId,
-          playlistVersionId: versionId,
-        },
+        source:
+          sourceType === 'playlist'
+            ? ({ type: 'playlist', playlistId, playlistVersionId: versionId } as const)
+            : ({ type: 'dynamic-program', programDefinitionId } as const),
         timezone: timeZone,
         frequency,
         localStartTime: startTime,
@@ -131,10 +190,54 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
       setSaving(true);
       setError(null);
 
-      if (mode === 'create') {
-        await createRecurrence(input);
-      } else if (recurrence) {
-        await updateRecurrence(recurrence.recurrenceId, input);
+      const savedRecurrence =
+        mode === 'create'
+          ? await createRecurrence(input)
+          : recurrence
+            ? await updateRecurrence(recurrence.recurrenceId, input)
+            : null;
+
+      if (sourceType === 'dynamic-program' && savedRecurrence) {
+        const definition = definitions.find(
+          (candidate) => candidate.programDefinitionId === programDefinitionId,
+        );
+
+        if (!definition) {
+          throw new Error('Selected Request Show definition is no longer available.');
+        }
+
+        if (!ownerName) {
+          throw new Error('A registered Qortium name is required to materialize Request Show.');
+        }
+
+        if (!libraryLoaded) {
+          throw new Error('Station library is not ready. Wait for library loading to finish.');
+        }
+
+        if (!requestShowLoaded) {
+          throw new Error('Request Show configuration is not ready.');
+        }
+
+        if (!likesReady) {
+          throw new Error('Like records are not ready. Wait for Like loading to finish.');
+        }
+
+        const compiled = compileScheduleRecurrence(savedRecurrence, getNowUtcMs());
+        if (!compiled.ok) {
+          throw new Error(compiled.errors.join(' '));
+        }
+
+        for (const event of compiled.events) {
+          await materializeRequestShowOccurrenceAction(
+            event,
+            definition,
+            eligibleTracks,
+            rankFromAggregates(eligibleTracks, aggregates),
+            new Date().toISOString(),
+            ownerName,
+            { reuseExisting: mode === 'create' },
+          );
+        }
       }
 
       onClose();
@@ -160,6 +263,19 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
             onChange={(changeEvent) => setTitle(changeEvent.target.value)}
             placeholder="Request Show"
           />
+        </label>
+
+        <label className="form-field">
+          Source type
+          <select
+            value={sourceType}
+            onChange={(changeEvent) =>
+              setSourceType(changeEvent.target.value as 'playlist' | 'dynamic-program')
+            }
+          >
+            <option value="playlist">Immutable playlist</option>
+            <option value="dynamic-program">Request Show</option>
+          </select>
         </label>
 
         <label className="form-field">
@@ -231,39 +347,58 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
           </label>
         </div>
 
-        <label className="form-field">
-          Playlist
-          <select
-            value={playlistId}
-            onChange={(changeEvent) => {
-              setPlaylistId(changeEvent.target.value);
-              setVersionId('');
-            }}
-          >
-            <option value="">Select a playlist</option>
-            {playlists.map((playlist) => (
-              <option key={playlist.playlistId} value={playlist.playlistId}>
-                {playlist.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        {sourceType === 'playlist' ? (
+          <>
+            <label className="form-field">
+              Playlist
+              <select
+                value={playlistId}
+                onChange={(changeEvent) => {
+                  setPlaylistId(changeEvent.target.value);
+                  setVersionId('');
+                }}
+              >
+                <option value="">Select a playlist</option>
+                {playlists.map((playlist) => (
+                  <option key={playlist.playlistId} value={playlist.playlistId}>
+                    {playlist.title}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <label className="form-field">
-          Immutable playlist version
-          <select
-            value={versionId}
-            onChange={(changeEvent) => setVersionId(changeEvent.target.value)}
-            disabled={!playlistId}
-          >
-            <option value="">Select a published version</option>
-            {versions.map((version) => (
-              <option key={version.versionId} value={version.versionId}>
-                v{version.versionNumber} — {version.tracks.length} tracks
-              </option>
-            ))}
-          </select>
-        </label>
+            <label className="form-field">
+              Immutable playlist version
+              <select
+                value={versionId}
+                onChange={(changeEvent) => setVersionId(changeEvent.target.value)}
+                disabled={!playlistId}
+              >
+                <option value="">Select a published version</option>
+                {versions.map((version) => (
+                  <option key={version.versionId} value={version.versionId}>
+                    v{version.versionNumber} — {version.tracks.length} tracks
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : (
+          <label className="form-field">
+            Request Show definition
+            <select
+              value={programDefinitionId}
+              onChange={(changeEvent) => setProgramDefinitionId(changeEvent.target.value)}
+            >
+              <option value="">Select a Request Show definition</option>
+              {definitions.map((definition) => (
+                <option key={definition.programDefinitionId} value={definition.programDefinitionId}>
+                  {definition.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <p className="recurrence-editor__hint">
           The next 8 weeks are compiled into concrete UTC schedule events. Runtime never evaluates
@@ -285,11 +420,24 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
             className="button button--primary"
             type="button"
             onClick={handleSave}
-            disabled={saving || !playlistId || !versionId || !timeZone}
+            disabled={
+              saving ||
+              !timeZone ||
+              !title.trim() ||
+              (sourceType === 'playlist' && (!playlistId || !versionId)) ||
+              (sourceType === 'dynamic-program' &&
+                (!programDefinitionId || !libraryLoaded || !requestShowLoaded || !likesReady))
+            }
           >
             {saving ? 'Compiling…' : mode === 'create' ? 'Create Recurrence' : 'Save Recurrence'}
           </button>
         </div>
+        {sourceType === 'dynamic-program' &&
+        (libraryLoading || requestShowLoading || likesLoading || likesIncomplete) ? (
+          <p className="recurrence-editor__hint">
+            Waiting for station library and Like records before generating lineups…
+          </p>
+        ) : null}
       </div>
     </Modal>
   );

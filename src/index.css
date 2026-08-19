@@ -476,6 +476,14 @@ button {
   font-size: 0.85rem;
 }
 
+.now-playing__like {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
 .now-playing__error {
   color: #e53e3e;
   font-size: 0.85rem;
@@ -1654,6 +1662,90 @@ button {
 .recurrence-card__actions {
   display: flex;
   gap: 0.4rem;
+}
+
+/* ── Request Show Admin ──────────────────────────────────────────── */
+
+.request-show-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.request-show-admin__form,
+.request-show-admin__definitions,
+.request-show-admin__occurrences {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.request-show-admin__form h3,
+.request-show-admin__definitions h3,
+.request-show-admin__occurrences h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.request-show-admin__occurrence-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.request-show-admin__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.request-show-admin__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.request-show-admin__item div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.request-show-admin__item strong {
+  font-size: 0.9rem;
+}
+
+.request-show-admin__item span {
+  color: rgba(230, 230, 230, 0.5);
+  font-size: 0.78rem;
+}
+
+.request-show-admin__status {
+  color: #ffb47d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.request-show-admin__status--ready {
+  color: #7dffb4;
+}
+
+.request-show-admin__empty {
+  color: rgba(230, 230, 230, 0.4);
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 /* ── Responsive ───────────────────────────────────────────────────── */

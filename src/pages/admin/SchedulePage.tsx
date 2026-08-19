@@ -17,6 +17,7 @@ import { ScheduleWeekView } from '../../features/scheduling/components/ScheduleW
 import { ScheduleAgendaView } from '../../features/scheduling/components/ScheduleAgendaView';
 import { ScheduleEventEditorModal } from '../../features/scheduling/components/ScheduleEventEditorModal';
 import { RecurrenceEditorModal } from '../../features/scheduling/components/RecurrenceEditorModal';
+import { RequestShowAdminPanel } from '../../features/dynamic-programs/request-show/RequestShowAdminPanel';
 import {
   addDaysToLocalDate,
   formatZonedDateInput,
@@ -25,7 +26,7 @@ import {
 import { validateScheduleSet } from '../../features/scheduling/services/scheduleService';
 import type { ScheduleEvent, ScheduleRecurrence } from '../../types/domain';
 
-type ViewMode = 'week' | 'agenda' | 'recurring';
+type ViewMode = 'week' | 'agenda' | 'recurring' | 'request-show';
 
 type ScheduleModalState =
   | {
@@ -219,6 +220,13 @@ export default function SchedulePage() {
             >
               Recurring
             </button>
+            <button
+              className={`button ${viewMode === 'request-show' ? 'button--primary' : 'button--secondary'}`}
+              type="button"
+              onClick={() => setViewMode('request-show')}
+            >
+              Request Show
+            </button>
           </div>
 
           <button
@@ -254,7 +262,9 @@ export default function SchedulePage() {
           </p>
         )}
 
-        {viewMode === 'recurring' ? (
+        {viewMode === 'request-show' ? (
+          <RequestShowAdminPanel events={events} />
+        ) : viewMode === 'recurring' ? (
           <section className="recurrence-list">
             <div className="recurrence-list__toolbar">
               <button

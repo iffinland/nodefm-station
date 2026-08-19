@@ -23,6 +23,7 @@ import {
 import { deserializeTrackFromQdn, getTrackQdnIdentifier } from '../../tracks/services/trackService';
 import { isValidPlaylistVersionRecord } from './timelineMath';
 import { loadScheduleEventsForPublisher } from '../../scheduling/services/scheduleStore';
+import { loadRequestShowOccurrencesForPublisher } from '../../dynamic-programs/request-show/requestShowStore';
 
 export type RadioTimelineData = {
   station: Station;
@@ -146,6 +147,15 @@ export async function loadRadioTimelineData(
       }
     }
 
+    const occurrenceRecords = await loadRequestShowOccurrencesForPublisher(publisherName);
+    for (const occurrence of occurrenceRecords) {
+      if (dynamicOccurrences[occurrence.occurrenceId]) {
+        throw new Error(`Duplicate Request Show occurrence: ${occurrence.occurrenceId}`);
+      }
+
+      dynamicOccurrences[occurrence.occurrenceId] = occurrence;
+    }
+
     for (const versionId of versionIds) {
       const payload = await fetchRecord({
         service: 'JSON',
@@ -159,6 +169,11 @@ export async function loadRadioTimelineData(
     const trackIds = new Set<string>();
     for (const version of Object.values(playlistVersions)) {
       for (const track of version.tracks) {
+        trackIds.add(track.trackId);
+      }
+    }
+    for (const occurrence of Object.values(dynamicOccurrences)) {
+      for (const track of occurrence.tracks) {
         trackIds.add(track.trackId);
       }
     }
