@@ -15,6 +15,7 @@ import type { Track } from '../../types/domain';
 import { TrackEditModal } from '../../features/library/components/TrackEditModal';
 import { UploadFlow } from '../../features/library/components/UploadFlow';
 import { AddQdnFlow } from '../../features/library/components/AddQdnFlow';
+import { TrackCover } from '../../features/library/components/TrackCover';
 
 export default function LibraryPage() {
   const { tracks, loaded, loading, error, removeTrack, refresh } = useLibrary();
@@ -136,7 +137,10 @@ function TrackCard({
   return (
     <div className="track-card">
       <div className="track-card__cover">
-        <div className="track-card__cover-placeholder">🎵</div>
+        <TrackCover
+          cover={track.cover}
+          placeholder={<div className="track-card__cover-placeholder">🎵</div>}
+        />
       </div>
 
       <div className="track-card__info">

@@ -13,9 +13,9 @@
  * ============================================================ */
 
 import { useState, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
+import { Modal } from '../../../components/Modal';
 import {
   publishResource,
   selectPublishSource,
@@ -284,203 +284,192 @@ export function UploadFlow({
     createTrack,
   ]);
 
-  return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal__header">
-          <h2 className="modal__title">Upload Audio</h2>
-          <button className="modal__close" type="button" onClick={onClose}>
-            ✕
+  return (
+    <Modal title="Upload Audio" onClose={onClose}>
+      {state.step === 'select' && (
+        <div className="upload-flow__select">
+          <p>Select an audio file to upload to the station library.</p>
+          <p className="upload-flow__hint">Supported formats: MP3, WAV, FLAC, OGG, AAC, M4A</p>
+          {!ownerName && (
+            <p className="upload-flow__warning">
+              ⚠️ A registered Qortium name is required to publish resources.
+            </p>
+          )}
+          {state.error && <p className="form-error">{state.error}</p>}
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={handleSelectAudio}
+            disabled={!ownerName}
+          >
+            Select Audio File
           </button>
         </div>
-        <div className="modal__body">
-          {state.step === 'select' && (
-            <div className="upload-flow__select">
-              <p>Select an audio file to upload to the station library.</p>
-              <p className="upload-flow__hint">Supported formats: MP3, WAV, FLAC, OGG, AAC, M4A</p>
-              {!ownerName && (
-                <p className="upload-flow__warning">
-                  ⚠️ A registered Qortium name is required to publish resources.
-                </p>
-              )}
-              {state.error && <p className="form-error">{state.error}</p>}
-              <button
-                className="button button--primary"
-                type="button"
-                onClick={handleSelectAudio}
-                disabled={!ownerName}
-              >
-                Select Audio File
-              </button>
-            </div>
-          )}
+      )}
 
-          {state.step === 'metadata' && (
-            <div className="upload-flow__metadata">
-              <div className="upload-flow__file-info">
-                <strong>File:</strong>{' '}
-                {state.audioSource && !state.audioSource.canceled
-                  ? `${state.audioSource.fileName} (${(state.audioSource.size / 1024 / 1024).toFixed(1)} MB)`
-                  : 'Not selected'}
-                <br />
-                <strong>Duration:</strong> Resolved after publish
-              </div>
+      {state.step === 'metadata' && (
+        <div className="upload-flow__metadata">
+          <div className="upload-flow__file-info">
+            <strong>File:</strong>{' '}
+            {state.audioSource && !state.audioSource.canceled
+              ? `${state.audioSource.fileName} (${(state.audioSource.size / 1024 / 1024).toFixed(1)} MB)`
+              : 'Not selected'}
+            <br />
+            <strong>Duration:</strong> Resolved after publish
+          </div>
 
-              <label className="form-field">
-                Title
-                <input
-                  type="text"
-                  value={state.title}
-                  onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))}
-                  placeholder="Track title"
-                />
-              </label>
+          <label className="form-field">
+            Title
+            <input
+              type="text"
+              value={state.title}
+              onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))}
+              placeholder="Track title"
+            />
+          </label>
 
-              <label className="form-field">
-                Artist
-                <input
-                  type="text"
-                  value={state.artist}
-                  onChange={(e) => setState((s) => ({ ...s, artist: e.target.value }))}
-                  placeholder="Artist name"
-                />
-              </label>
+          <label className="form-field">
+            Artist
+            <input
+              type="text"
+              value={state.artist}
+              onChange={(e) => setState((s) => ({ ...s, artist: e.target.value }))}
+              placeholder="Artist name"
+            />
+          </label>
 
-              <label className="form-field">
-                Description
-                <textarea
-                  value={state.description}
-                  onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-                  placeholder="Track description"
-                  rows={2}
-                />
-              </label>
+          <label className="form-field">
+            Description
+            <textarea
+              value={state.description}
+              onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
+              placeholder="Track description"
+              rows={2}
+            />
+          </label>
 
-              <label className="form-field">
-                Genres (comma-separated)
-                <input
-                  type="text"
-                  value={state.genres}
-                  onChange={(e) => setState((s) => ({ ...s, genres: e.target.value }))}
-                  placeholder="Rock, Electronic, Jazz"
-                />
-              </label>
+          <label className="form-field">
+            Genres (comma-separated)
+            <input
+              type="text"
+              value={state.genres}
+              onChange={(e) => setState((s) => ({ ...s, genres: e.target.value }))}
+              placeholder="Rock, Electronic, Jazz"
+            />
+          </label>
 
-              <label className="form-field">
-                Tags (comma-separated)
-                <input
-                  type="text"
-                  value={state.tags}
-                  onChange={(e) => setState((s) => ({ ...s, tags: e.target.value }))}
-                  placeholder="chill, upbeat, instrumental"
-                />
-              </label>
+          <label className="form-field">
+            Tags (comma-separated)
+            <input
+              type="text"
+              value={state.tags}
+              onChange={(e) => setState((s) => ({ ...s, tags: e.target.value }))}
+              placeholder="chill, upbeat, instrumental"
+            />
+          </label>
 
-              <div className="form-field">
-                <label>Cover Image (optional, max 2 MB)</label>
-                <input
-                  ref={coverInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleCoverSelected(file);
-                  }}
-                />
-                {state.coverBase64 && (
-                  <img
-                    src={state.coverBase64}
-                    alt="Cover preview"
-                    className="upload-flow__cover-preview"
-                  />
-                )}
-              </div>
+          <div className="form-field">
+            <label>Cover Image (optional, max 2 MB)</label>
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleCoverSelected(file);
+              }}
+            />
+            {state.coverBase64 && (
+              <img
+                src={state.coverBase64}
+                alt="Cover preview"
+                className="upload-flow__cover-preview"
+              />
+            )}
+          </div>
 
-              {state.error && <p className="form-error">{state.error}</p>}
+          {state.error && <p className="form-error">{state.error}</p>}
 
-              <div className="form-actions">
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() =>
-                    setState((s) => ({
-                      ...s,
-                      step: 'select',
-                      audioSource: null,
-                      durationMs: null,
-                      error: null,
-                    }))
-                  }
-                >
-                  Back
-                </button>
-                <button
-                  className="button button--primary"
-                  type="button"
-                  onClick={handlePublish}
-                  disabled={!state.title || !ownerName}
-                >
-                  Publish Track
-                </button>
-              </div>
-            </div>
-          )}
-
-          {state.step === 'publishing' && <LoadingState message="Publishing audio to QDN…" />}
-
-          {state.step === 'resolving' && <LoadingState message="Resolving audio duration…" />}
-
-          {state.step === 'done' && (
-            <div className="upload-flow__done">
-              <p className="upload-flow__success">✅ Track published!</p>
-              {state.partialResult && <p className="upload-flow__partial">{state.partialResult}</p>}
-              <div className="form-actions">
-                <button className="button button--primary" type="button" onClick={onComplete}>
-                  Done
-                </button>
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() =>
-                    setState((s) => ({
-                      ...s,
-                      step: 'select',
-                      audioSource: null,
-                      durationMs: null,
-                      title: '',
-                      artist: '',
-                      description: '',
-                      genres: '',
-                      tags: '',
-                      coverFile: null,
-                      coverBase64: null,
-                      error: null,
-                      partialResult: null,
-                    }))
-                  }
-                >
-                  Upload Another
-                </button>
-              </div>
-            </div>
-          )}
-
-          {state.step === 'error' && (
-            <ErrorState
-              message="Upload failed"
-              detail={state.error ?? undefined}
-              onRetry={() =>
+          <div className="form-actions">
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() =>
                 setState((s) => ({
                   ...s,
-                  step: 'metadata',
+                  step: 'select',
+                  audioSource: null,
+                  durationMs: null,
                   error: null,
                 }))
               }
-            />
-          )}
+            >
+              Back
+            </button>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handlePublish}
+              disabled={!state.title || !ownerName}
+            >
+              Publish Track
+            </button>
+          </div>
         </div>
-      </div>
-    </div>,
-    document.body,
+      )}
+
+      {state.step === 'publishing' && <LoadingState message="Publishing audio to QDN…" />}
+
+      {state.step === 'resolving' && <LoadingState message="Resolving audio duration…" />}
+
+      {state.step === 'done' && (
+        <div className="upload-flow__done">
+          <p className="upload-flow__success">✅ Track published!</p>
+          {state.partialResult && <p className="upload-flow__partial">{state.partialResult}</p>}
+          <div className="form-actions">
+            <button className="button button--primary" type="button" onClick={onComplete}>
+              Done
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() =>
+                setState((s) => ({
+                  ...s,
+                  step: 'select',
+                  audioSource: null,
+                  durationMs: null,
+                  title: '',
+                  artist: '',
+                  description: '',
+                  genres: '',
+                  tags: '',
+                  coverFile: null,
+                  coverBase64: null,
+                  error: null,
+                  partialResult: null,
+                }))
+              }
+            >
+              Upload Another
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.step === 'error' && (
+        <ErrorState
+          message="Upload failed"
+          detail={state.error ?? undefined}
+          onRetry={() =>
+            setState((s) => ({
+              ...s,
+              step: 'metadata',
+              error: null,
+            }))
+          }
+        />
+      )}
+    </Modal>
   );
 }

@@ -10,6 +10,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { getRouterBasename } from '../qortium/bridge';
 import { useAuth } from './providers/authContext';
+import { useStation } from '../features/station';
 import { Layout } from './Layout';
 import { AdminLayout } from './AdminLayout';
 import { LoadingState } from '../components/LoadingState';
@@ -39,7 +40,8 @@ function PageLoader() {
 // ── Admin Guard ───────────────────────────────────────────────────
 
 function AdminGuard({ children }: { children: React.ReactNode }) {
-  const { auth, isOwner } = useAuth();
+  const { auth } = useAuth();
+  const { isOwner } = useStation();
 
   if (auth.status === 'loading') {
     return <LoadingState message="Checking authorization…" />;

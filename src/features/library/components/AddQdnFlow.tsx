@@ -6,9 +6,9 @@
  * ============================================================ */
 
 import { useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
+import { Modal } from '../../../components/Modal';
 import {
   searchQdnResources,
   getQdnResourceUrl,
@@ -191,227 +191,210 @@ export function AddQdnFlow({
     createTrack,
   ]);
 
-  return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal__header">
-          <h2 className="modal__title">Add from QDN</h2>
-          <button className="modal__close" type="button" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal__body">
-          {state.step === 'search' && (
-            <div className="add-qdn__search">
-              <p>Search for existing QDN audio resources to add to your library.</p>
-              <div className="add-qdn__search-bar">
-                <input
-                  type="text"
-                  value={state.searchQuery}
-                  onChange={(e) => setState((s) => ({ ...s, searchQuery: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  placeholder="Search QDN audio…"
-                />
-                <button
-                  className="button button--primary"
-                  type="button"
-                  onClick={handleSearch}
-                  disabled={state.searching || !state.searchQuery.trim()}
-                >
-                  Search
-                </button>
-              </div>
-
-              {state.searching && <LoadingState message="Searching QDN…" />}
-
-              {state.searchError && (
-                <ErrorState
-                  message="Search failed"
-                  detail={state.searchError}
-                  onRetry={handleSearch}
-                />
-              )}
-
-              {!state.searching && state.results.length > 0 && (
-                <div className="add-qdn__results">
-                  {state.results.map((r) => (
-                    <div
-                      key={`${r.service}-${r.name}`}
-                      className="add-qdn__result-item"
-                      onClick={() => handleSelect(r)}
-                    >
-                      <div className="add-qdn__result-info">
-                        <strong>{r.metadata?.title ?? r.name}</strong>
-                        {r.metadata?.description && (
-                          <span className="add-qdn__result-desc">{r.metadata.description}</span>
-                        )}
-                        <span className="add-qdn__result-service">{r.service}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {!state.searching && state.results.length === 0 && !state.searchError && (
-                <p className="add-qdn__empty">Enter a search query to find QDN audio resources.</p>
-              )}
-            </div>
-          )}
-
-          {state.step === 'confirm' && state.selected && (
-            <div className="add-qdn__confirm">
-              <h3>Selected Resource</h3>
-              <div className="add-qdn__resource-detail">
-                <p>
-                  <strong>Name:</strong> {state.selected.metadata?.title ?? state.selected.name}
-                </p>
-                <p>
-                  <strong>Service:</strong> {state.selected.service}
-                </p>
-                {state.selected.metadata?.description && (
-                  <p>
-                    <strong>Description:</strong> {state.selected.metadata.description}
-                  </p>
-                )}
-                <p>
-                  <strong>Duration:</strong>{' '}
-                  {state.durationResolving
-                    ? 'Resolving…'
-                    : state.durationMs !== null
-                      ? formatDurationMs(state.durationMs)
-                      : 'Unknown'}
-                </p>
-              </div>
-
-              {state.error && <p className="form-error">{state.error}</p>}
-
-              <div className="form-actions">
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => setState((s) => ({ ...s, step: 'search' }))}
-                >
-                  Back to Search
-                </button>
-                <button
-                  className="button button--primary"
-                  type="button"
-                  onClick={() => setState((s) => ({ ...s, step: 'metadata' }))}
-                  disabled={
-                    state.durationResolving ||
-                    state.durationMs === null ||
-                    !isValidDurationMs(state.durationMs)
-                  }
-                >
-                  Add Metadata
-                </button>
-              </div>
-            </div>
-          )}
-
-          {state.step === 'metadata' && (
-            <div className="add-qdn__metadata">
-              <h3>Track Metadata</h3>
-
-              <label className="form-field">
-                Title
-                <input
-                  type="text"
-                  value={state.title}
-                  onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))}
-                />
-              </label>
-
-              <label className="form-field">
-                Artist
-                <input
-                  type="text"
-                  value={state.artist}
-                  onChange={(e) => setState((s) => ({ ...s, artist: e.target.value }))}
-                />
-              </label>
-
-              <label className="form-field">
-                Description
-                <textarea
-                  value={state.description}
-                  onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-                  rows={2}
-                />
-              </label>
-
-              <label className="form-field">
-                Genres (comma-separated)
-                <input
-                  type="text"
-                  value={state.genres}
-                  onChange={(e) => setState((s) => ({ ...s, genres: e.target.value }))}
-                  placeholder="Rock, Electronic"
-                />
-              </label>
-
-              <label className="form-field">
-                Tags (comma-separated)
-                <input
-                  type="text"
-                  value={state.tags}
-                  onChange={(e) => setState((s) => ({ ...s, tags: e.target.value }))}
-                />
-              </label>
-
-              <div className="form-actions">
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => setState((s) => ({ ...s, step: 'confirm' }))}
-                >
-                  Back
-                </button>
-                <button
-                  className="button button--primary"
-                  type="button"
-                  onClick={handleImport}
-                  disabled={
-                    !state.title ||
-                    state.durationMs === null ||
-                    !isValidDurationMs(state.durationMs)
-                  }
-                >
-                  Add to Library
-                </button>
-              </div>
-            </div>
-          )}
-
-          {state.step === 'importing' && <LoadingState message="Adding track to library…" />}
-
-          {state.step === 'done' && (
-            <div className="upload-flow__done">
-              <p className="upload-flow__success">✅ Track added to library!</p>
-              <div className="form-actions">
-                <button className="button button--primary" type="button" onClick={onComplete}>
-                  Done
-                </button>
-              </div>
-            </div>
-          )}
-
-          {state.step === 'error' && (
-            <ErrorState
-              message="Import failed"
-              detail={state.error ?? undefined}
-              onRetry={() =>
-                setState((s) => ({
-                  ...s,
-                  step: state.selected ? 'confirm' : 'search',
-                  error: null,
-                }))
-              }
+  return (
+    <Modal title="Add from QDN" onClose={onClose} wide>
+      {state.step === 'search' && (
+        <div className="add-qdn__search">
+          <p>Search for existing QDN audio resources to add to your library.</p>
+          <div className="add-qdn__search-bar">
+            <input
+              type="text"
+              value={state.searchQuery}
+              onChange={(e) => setState((s) => ({ ...s, searchQuery: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              placeholder="Search QDN audio…"
             />
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handleSearch}
+              disabled={state.searching || !state.searchQuery.trim()}
+            >
+              Search
+            </button>
+          </div>
+
+          {state.searching && <LoadingState message="Searching QDN…" />}
+
+          {state.searchError && (
+            <ErrorState message="Search failed" detail={state.searchError} onRetry={handleSearch} />
+          )}
+
+          {!state.searching && state.results.length > 0 && (
+            <div className="add-qdn__results">
+              {state.results.map((r) => (
+                <div
+                  key={`${r.service}-${r.name}`}
+                  className="add-qdn__result-item"
+                  onClick={() => handleSelect(r)}
+                >
+                  <div className="add-qdn__result-info">
+                    <strong>{r.metadata?.title ?? r.name}</strong>
+                    {r.metadata?.description && (
+                      <span className="add-qdn__result-desc">{r.metadata.description}</span>
+                    )}
+                    <span className="add-qdn__result-service">{r.service}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!state.searching && state.results.length === 0 && !state.searchError && (
+            <p className="add-qdn__empty">Enter a search query to find QDN audio resources.</p>
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+      )}
+
+      {state.step === 'confirm' && state.selected && (
+        <div className="add-qdn__confirm">
+          <h3>Selected Resource</h3>
+          <div className="add-qdn__resource-detail">
+            <p>
+              <strong>Name:</strong> {state.selected.metadata?.title ?? state.selected.name}
+            </p>
+            <p>
+              <strong>Service:</strong> {state.selected.service}
+            </p>
+            {state.selected.metadata?.description && (
+              <p>
+                <strong>Description:</strong> {state.selected.metadata.description}
+              </p>
+            )}
+            <p>
+              <strong>Duration:</strong>{' '}
+              {state.durationResolving
+                ? 'Resolving…'
+                : state.durationMs !== null
+                  ? formatDurationMs(state.durationMs)
+                  : 'Unknown'}
+            </p>
+          </div>
+
+          {state.error && <p className="form-error">{state.error}</p>}
+
+          <div className="form-actions">
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => setState((s) => ({ ...s, step: 'search' }))}
+            >
+              Back to Search
+            </button>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => setState((s) => ({ ...s, step: 'metadata' }))}
+              disabled={
+                state.durationResolving ||
+                state.durationMs === null ||
+                !isValidDurationMs(state.durationMs)
+              }
+            >
+              Add Metadata
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.step === 'metadata' && (
+        <div className="add-qdn__metadata">
+          <h3>Track Metadata</h3>
+
+          <label className="form-field">
+            Title
+            <input
+              type="text"
+              value={state.title}
+              onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))}
+            />
+          </label>
+
+          <label className="form-field">
+            Artist
+            <input
+              type="text"
+              value={state.artist}
+              onChange={(e) => setState((s) => ({ ...s, artist: e.target.value }))}
+            />
+          </label>
+
+          <label className="form-field">
+            Description
+            <textarea
+              value={state.description}
+              onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
+              rows={2}
+            />
+          </label>
+
+          <label className="form-field">
+            Genres (comma-separated)
+            <input
+              type="text"
+              value={state.genres}
+              onChange={(e) => setState((s) => ({ ...s, genres: e.target.value }))}
+              placeholder="Rock, Electronic"
+            />
+          </label>
+
+          <label className="form-field">
+            Tags (comma-separated)
+            <input
+              type="text"
+              value={state.tags}
+              onChange={(e) => setState((s) => ({ ...s, tags: e.target.value }))}
+            />
+          </label>
+
+          <div className="form-actions">
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => setState((s) => ({ ...s, step: 'confirm' }))}
+            >
+              Back
+            </button>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handleImport}
+              disabled={
+                !state.title || state.durationMs === null || !isValidDurationMs(state.durationMs)
+              }
+            >
+              Add to Library
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.step === 'importing' && <LoadingState message="Adding track to library…" />}
+
+      {state.step === 'done' && (
+        <div className="upload-flow__done">
+          <p className="upload-flow__success">✅ Track added to library!</p>
+          <div className="form-actions">
+            <button className="button button--primary" type="button" onClick={onComplete}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state.step === 'error' && (
+        <ErrorState
+          message="Import failed"
+          detail={state.error ?? undefined}
+          onRetry={() =>
+            setState((s) => ({
+              ...s,
+              step: state.selected ? 'confirm' : 'search',
+              error: null,
+            }))
+          }
+        />
+      )}
+    </Modal>
   );
 }

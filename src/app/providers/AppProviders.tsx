@@ -8,16 +8,17 @@
 import { type ReactNode } from 'react';
 import { AudioProvider } from '../../audio/AudioProvider';
 import { AuthProvider } from './AuthProvider';
+import { StationProvider } from '../../features/station/StationProvider';
+import { LiveRadioPlayerProvider } from '../../features/radio/player';
 
-type AppProvidersProps = {
-  children: ReactNode;
-  stationOwnerAddress?: string | null;
-};
-
-export function AppProviders({ children, stationOwnerAddress }: AppProvidersProps) {
+export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <AudioProvider>
-      <AuthProvider stationOwnerAddress={stationOwnerAddress}>{children}</AuthProvider>
+      <AuthProvider>
+        <StationProvider>
+          <LiveRadioPlayerProvider>{children}</LiveRadioPlayerProvider>
+        </StationProvider>
+      </AuthProvider>
     </AudioProvider>
   );
 }

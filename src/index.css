@@ -179,6 +179,17 @@ button {
   cursor: default;
 }
 
+.player-bar__time {
+  color: rgba(230, 230, 230, 0.5);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.player-bar__volume {
+  width: 6rem;
+  accent-color: #7db4ff;
+}
+
 /* ── Admin Layout ─────────────────────────────────────────────────── */
 
 .layout--admin {
@@ -413,6 +424,13 @@ button {
   color: rgba(230, 230, 230, 0.2);
 }
 
+.now-playing__cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
 .radio-page__now-playing {
   display: flex;
   gap: 1.5rem;
@@ -447,6 +465,52 @@ button {
   width: fit-content;
 }
 
+.now-playing__program {
+  color: #7db4ff;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.now-playing__track-time {
+  color: rgba(230, 230, 230, 0.5);
+  font-size: 0.85rem;
+}
+
+.now-playing__error {
+  color: #e53e3e;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.radio-page__upcoming-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.radio-page__upcoming-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.radio-page__upcoming-track {
+  color: #e6e6e6;
+}
+
+.radio-page__upcoming-time {
+  color: rgba(230, 230, 230, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
 .radio-page__placeholder,
 .playlists-page__placeholder,
 .about-page__placeholder,
@@ -460,6 +524,54 @@ button {
 .admin-station-settings__placeholder {
   color: rgba(230, 230, 230, 0.35);
   font-style: italic;
+}
+
+/* ── Public Playlists ─────────────────────────────────────────────── */
+
+.public-playlists__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+}
+
+.public-playlist-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.public-playlist-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.public-playlist-card__title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.public-playlist-card__description {
+  color: rgba(230, 230, 230, 0.6);
+  font-size: 0.85rem;
+}
+
+.public-playlist-card__visibility {
+  color: #7db4ff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.playlists-page__note {
+  color: rgba(230, 230, 230, 0.35);
+  font-size: 0.8rem;
+  font-style: italic;
+  margin-top: 1rem;
 }
 
 /* ── Admin Dashboard ──────────────────────────────────────────────── */
@@ -570,6 +682,13 @@ button {
 .track-card__cover-placeholder {
   font-size: 1.5rem;
   color: rgba(230, 230, 230, 0.2);
+}
+
+.track-card__cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
 }
 
 .track-card__info {
@@ -737,6 +856,19 @@ button {
   margin-top: 1.25rem;
 }
 
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: rgba(230, 230, 230, 0.7);
+  font-size: 0.9rem;
+}
+
+.form-check input {
+  accent-color: #7db4ff;
+}
+
 .form-error {
   color: #e53e3e;
   font-size: 0.85rem;
@@ -751,6 +883,10 @@ button {
   padding: 0.5rem;
   background: rgba(125, 255, 180, 0.1);
   border-radius: 6px;
+}
+
+.admin-station-settings__form {
+  max-width: 560px;
 }
 
 /* ── Upload Flow ─────────────────────────────────────────────────── */

@@ -17,6 +17,8 @@ const DEFAULT_VOLUME = 0.8;
 
 export class AudioEngine {
   private audio: HTMLAudioElement | null = null;
+  private pendingSeekSec: number | null = null;
+  private lastTimeUpdateAt = 0;
   private state: PlayerState;
   private listeners = new Set<PlayerListener>();
 
@@ -49,6 +51,19 @@ export class AudioEngine {
       });
       this.audio.addEventListener('waiting', () => this.updatePlaybackState('buffering'));
       this.audio.addEventListener('canplay', () => this.updatePlaybackState('ready'));
+      this.audio.addEventListener('loadedmetadata', () => this.applyPendingSeek());
+      this.audio.addEventListener('canplay', () => this.applyPendingSeek());
+      this.audio.addEventListener('timeupdate', () => {
+        const now = Date.now();
+        if (now - this.lastTimeUpdateAt < 250) {
+          return;
+        }
+
+        this.lastTimeUpdateAt = now;
+        const currentTime = this.audio?.currentTime ?? 0;
+        this.state = { ...this.state, currentOffsetSec: currentTime };
+        this.notify();
+      });
       this.audio.addEventListener('error', () => {
         this.notifyError('Audio playback error.');
       });
@@ -71,6 +86,17 @@ export class AudioEngine {
   private notifyError(message: string): void {
     this.state = { ...this.state, playbackState: 'error', error: message };
     this.notify();
+  }
+
+  private applyPendingSeek(): void {
+    if (this.pendingSeekSec === null) {
+      return;
+    }
+
+    const target = this.pendingSeekSec;
+    if (this.seek(target)) {
+      this.pendingSeekSec = null;
+    }
   }
 
   private notify(): void {
@@ -100,18 +126,36 @@ export class AudioEngine {
   }
 
   /** Load a track and prepare for playback */
-  load(track: AudioTrack): void {
+  load(track: AudioTrack, offsetSec?: number): void {
     const audio = this.ensureAudio();
+    this.pendingSeekSec =
+      typeof offsetSec === 'number' && Number.isFinite(offsetSec) && offsetSec >= 0
+        ? offsetSec
+        : null;
     this.state = {
       ...this.state,
       currentTrack: track,
       playbackState: 'resolving',
+      currentOffsetSec: this.pendingSeekSec ?? 0,
       error: null,
     };
     this.notify();
 
     audio.src = track.url;
     audio.load();
+  }
+
+  /** Update cover art after audio has started loading; ignores stale track changes. */
+  updateTrackCover(trackId: string, coverUrl: string): void {
+    if (!this.state.currentTrack || this.state.currentTrack.trackId !== trackId) {
+      return;
+    }
+
+    this.state = {
+      ...this.state,
+      currentTrack: { ...this.state.currentTrack, coverUrl },
+    };
+    this.notify();
   }
 
   play(): void {
@@ -138,12 +182,24 @@ export class AudioEngine {
     }
   }
 
-  seek(offsetSec: number): void {
-    if (this.audio) {
-      this.audio.currentTime = Math.max(0, offsetSec);
-      this.state = { ...this.state, currentOffsetSec: this.audio.currentTime };
-      this.notify();
+  seek(offsetSec: number): boolean {
+    if (!this.audio) {
+      return false;
     }
+
+    const clamped = Math.max(0, offsetSec);
+
+    try {
+      this.audio.currentTime = clamped;
+    } catch {
+      // The media element is not seekable yet. The pending-seek path
+      // will retry once metadata is available.
+      return false;
+    }
+
+    this.state = { ...this.state, currentOffsetSec: clamped };
+    this.notify();
+    return true;
   }
 
   getCurrentTime(): number {
@@ -175,6 +231,13 @@ export class AudioEngine {
 
   /** Reset to LIVE mode — the caller must recalculate the live position. */
   returnToLive(): void {
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.src = '';
+      this.audio.load();
+    }
+
+    this.pendingSeekSec = null;
     this.state = { ...this.state, mode: 'LIVE', playbackState: 'idle', currentTrack: null };
     this.notify();
   }
@@ -186,6 +249,8 @@ export class AudioEngine {
       this.audio.load();
       this.audio = null;
     }
+    this.pendingSeekSec = null;
+    this.lastTimeUpdateAt = 0;
     this.listeners.clear();
     this.state = {
       mode: 'LIVE',

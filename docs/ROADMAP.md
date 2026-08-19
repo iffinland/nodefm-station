@@ -79,7 +79,7 @@ remain visible after refresh/reopen.
 
 ## Phase 3 — Core Radio Timeline
 
-Status: **not started**
+Status: **COMPLETE**
 
 Build:
 
@@ -100,6 +100,15 @@ Exit criteria:
 
 - opening the app at different times joins the expected current track at the expected offset;
 - closing/reopening does not reset station sequence.
+
+Phase 3 exit criterion status: **PASSED** — owner embedded Qortium Home
+validation confirmed LIVE join, deterministic timeline progression,
+refresh/reopen UTC state recovery, navigation-safe global playback, and
+Return to Live behavior.
+
+Scheduled-event engine semantics are implemented and automated-tested, but the
+interactive scheduled-event owner smoke is deferred to Phase 4 because
+scheduler authoring does not exist yet. This is not a Phase 3 blocker.
 
 ## Phase 4 — Scheduler
 

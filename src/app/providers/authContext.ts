@@ -11,8 +11,6 @@ import type { AuthState } from '../../qortium/auth';
 
 export type AuthContextValue = {
   auth: AuthState;
-  /** True when the authenticated user is the station owner */
-  isOwner: boolean;
   /** The authenticated account's registered Qortium name, if any. Used as the QDN publisher name. */
   ownerName: string | null;
   refresh: () => void;
@@ -20,7 +18,6 @@ export type AuthContextValue = {
 
 export const AuthContext = createContext<AuthContextValue>({
   auth: { status: 'loading' },
-  isOwner: false,
   ownerName: null,
   refresh: () => {},
 });

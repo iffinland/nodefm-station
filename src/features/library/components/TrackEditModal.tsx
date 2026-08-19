@@ -5,7 +5,7 @@
  * ============================================================ */
 
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from '../../../components/Modal';
 import type { Track } from '../../../types/domain';
 import { useLibrary } from '../../../hooks/useLibrary';
 
@@ -54,63 +54,48 @@ export function TrackEditModal({ track, onClose }: Props) {
     }
   };
 
-  return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal__header">
-          <h2 className="modal__title">Edit Track</h2>
-          <button className="modal__close" type="button" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal__body">
-          <label className="form-field">
-            Title
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
+  return (
+    <Modal title="Edit Track" onClose={onClose}>
+      <label className="form-field">
+        Title
+        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
 
-          <label className="form-field">
-            Artist
-            <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} />
-          </label>
+      <label className="form-field">
+        Artist
+        <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} />
+      </label>
 
-          <label className="form-field">
-            Description
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-            />
-          </label>
+      <label className="form-field">
+        Description
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+      </label>
 
-          <label className="form-field">
-            Genres (comma-separated)
-            <input type="text" value={genres} onChange={(e) => setGenres(e.target.value)} />
-          </label>
+      <label className="form-field">
+        Genres (comma-separated)
+        <input type="text" value={genres} onChange={(e) => setGenres(e.target.value)} />
+      </label>
 
-          <label className="form-field">
-            Tags (comma-separated)
-            <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} />
-          </label>
+      <label className="form-field">
+        Tags (comma-separated)
+        <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} />
+      </label>
 
-          {error && <p className="form-error">{error}</p>}
+      {error && <p className="form-error">{error}</p>}
 
-          <div className="form-actions">
-            <button className="button button--secondary" type="button" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              className="button button--primary"
-              type="button"
-              onClick={handleSave}
-              disabled={saving || !title.trim()}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </div>
+      <div className="form-actions">
+        <button className="button button--secondary" type="button" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="button button--primary"
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !title.trim()}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
