@@ -9,7 +9,21 @@
  * Phase 1: skeleton with core playback mechanics only.
  * ============================================================ */
 
-import type { AudioTrack, PlaybackState, PlayerMode, PlayerState } from './playbackTypes';
+import type {
+  AudioTrack,
+  PlaybackState,
+  PlayerMode,
+  PlayerState,
+  PlaylistQueueState,
+} from './playbackTypes';
+import {
+  advancePlaylistQueue,
+  createPlaylistQueueState,
+  getCurrentPlaylistTrack,
+  previousPlaylistQueue,
+  setPlaylistQueueLoop,
+  setPlaylistQueueShuffle,
+} from './playlistQueue';
 
 type PlayerListener = (state: PlayerState) => void;
 
@@ -31,6 +45,7 @@ export class AudioEngine {
       volume: DEFAULT_VOLUME,
       muted: false,
       error: null,
+      playlistQueue: null,
     };
   }
 
@@ -68,8 +83,7 @@ export class AudioEngine {
         this.notifyError('Audio playback error.');
       });
       this.audio.addEventListener('ended', () => {
-        // Track ended — in Phase 3 this will trigger next-track logic
-        this.updatePlaybackState('ready');
+        this.handleTrackEnded();
       });
     }
 
@@ -86,6 +100,57 @@ export class AudioEngine {
   private notifyError(message: string): void {
     this.state = { ...this.state, playbackState: 'error', error: message };
     this.notify();
+  }
+
+  private handleTrackEnded(): void {
+    if (this.state.mode !== 'PLAYLIST' || !this.state.playlistQueue) {
+      this.updatePlaybackState('ready');
+      return;
+    }
+
+    const transition = advancePlaylistQueue(this.state.playlistQueue);
+    this.state = {
+      ...this.state,
+      playlistQueue: transition.queue,
+    };
+
+    if (transition.ended) {
+      this.pause();
+      this.seek(0);
+      this.state = {
+        ...this.state,
+        playbackState: 'paused',
+        currentOffsetSec: 0,
+        error: null,
+      };
+      this.notify();
+      return;
+    }
+
+    this.notify();
+    this.loadPlaylistTrack();
+    this.play();
+  }
+
+  private loadPlaylistTrack(): void {
+    const track = getCurrentPlaylistTrack(this.state.playlistQueue);
+    if (!track) {
+      return;
+    }
+
+    const audio = this.ensureAudio();
+    this.pendingSeekSec = 0;
+    this.state = {
+      ...this.state,
+      currentTrack: track,
+      playbackState: 'resolving',
+      currentOffsetSec: 0,
+      error: null,
+    };
+    this.notify();
+
+    audio.src = track.url;
+    audio.load();
   }
 
   private applyPendingSeek(): void {
@@ -159,6 +224,10 @@ export class AudioEngine {
   }
 
   play(): void {
+    if (this.state.mode === 'PLAYLIST' && !this.state.currentTrack && this.state.playlistQueue) {
+      this.loadPlaylistTrack();
+    }
+
     const audio = this.ensureAudio();
     audio.play().catch((error) => {
       // Browser autoplay policy — surface gracefully
@@ -224,8 +293,123 @@ export class AudioEngine {
     this.notify();
   }
 
-  setMode(mode: PlayerMode): void {
-    this.state = { ...this.state, mode };
+  getPlaylistQueue(): PlaylistQueueState | null {
+    return this.state.playlistQueue;
+  }
+
+  enterPlaylistMode(
+    tracks: readonly AudioTrack[],
+    options: {
+      startIndex?: number;
+      autoplay?: boolean;
+      shuffle?: boolean;
+      loop?: boolean;
+    } = {},
+  ): void {
+    if (tracks.length === 0) {
+      return;
+    }
+
+    const queue = createPlaylistQueueState(tracks, {
+      startIndex: options.startIndex ?? 0,
+      shuffle: options.shuffle ?? false,
+      loop: options.loop ?? false,
+    });
+
+    if (this.audio) {
+      this.audio.pause();
+    }
+
+    this.pendingSeekSec = null;
+    this.state = {
+      ...this.state,
+      mode: 'PLAYLIST',
+      playlistQueue: queue,
+      currentTrack: null,
+      currentOffsetSec: 0,
+      playbackState: 'idle',
+      error: null,
+    };
+    this.notify();
+
+    this.loadPlaylistTrack();
+
+    if (options.autoplay !== false) {
+      this.play();
+    }
+  }
+
+  playNext(): void {
+    if (this.state.mode !== 'PLAYLIST' || !this.state.playlistQueue) {
+      return;
+    }
+
+    const transition = advancePlaylistQueue(this.state.playlistQueue);
+    this.state = {
+      ...this.state,
+      playlistQueue: transition.queue,
+    };
+
+    if (transition.ended) {
+      this.pause();
+      this.seek(0);
+      this.state = {
+        ...this.state,
+        playbackState: 'paused',
+        currentOffsetSec: 0,
+        error: null,
+      };
+      this.notify();
+      return;
+    }
+
+    this.notify();
+    this.loadPlaylistTrack();
+    this.play();
+  }
+
+  playPrevious(): void {
+    if (this.state.mode !== 'PLAYLIST' || !this.state.playlistQueue) {
+      return;
+    }
+
+    const transition = previousPlaylistQueue(this.state.playlistQueue);
+    this.state = {
+      ...this.state,
+      playlistQueue: transition.queue,
+    };
+    this.notify();
+    this.loadPlaylistTrack();
+    this.play();
+  }
+
+  togglePlaylistShuffle(): void {
+    if (!this.state.playlistQueue) {
+      return;
+    }
+
+    this.state = {
+      ...this.state,
+      playlistQueue: setPlaylistQueueShuffle(
+        this.state.playlistQueue,
+        !this.state.playlistQueue.shuffleEnabled,
+      ),
+    };
+    this.notify();
+  }
+
+  togglePlaylistLoop(): void {
+    if (!this.state.playlistQueue) {
+      return;
+    }
+
+    this.state = {
+      ...this.state,
+      playlistQueue: setPlaylistQueueLoop(
+        this.state.playlistQueue,
+        !this.state.playlistQueue.loopEnabled,
+      ),
+    };
     this.notify();
   }
 
@@ -238,7 +422,15 @@ export class AudioEngine {
     }
 
     this.pendingSeekSec = null;
-    this.state = { ...this.state, mode: 'LIVE', playbackState: 'idle', currentTrack: null };
+    this.state = {
+      ...this.state,
+      mode: 'LIVE',
+      playbackState: 'idle',
+      currentTrack: null,
+      currentOffsetSec: 0,
+      error: null,
+      playlistQueue: null,
+    };
     this.notify();
   }
 
@@ -260,6 +452,7 @@ export class AudioEngine {
       volume: this.state.volume,
       muted: false,
       error: null,
+      playlistQueue: null,
     };
   }
 }

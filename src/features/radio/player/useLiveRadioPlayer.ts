@@ -8,7 +8,7 @@
  * ============================================================ */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PlayerState } from '../../../audio/playbackTypes';
+import type { AudioTrack, PlayerState } from '../../../audio/playbackTypes';
 import { useAudioEngine, usePlayerState } from '../../../audio';
 import type { Track } from '../../../types/domain';
 import { useRadioTimeline } from '../hooks/useRadioTimeline';
@@ -33,6 +33,20 @@ export type LiveRadioPlayer = {
   playerState: PlayerState;
   playbackError: string | null;
   togglePlayPause: () => void;
+  playPlaylist: (
+    tracks: readonly AudioTrack[],
+    options?: {
+      startIndex?: number;
+      autoplay?: boolean;
+      shuffle?: boolean;
+      loop?: boolean;
+    },
+  ) => void;
+  playNext: () => void;
+  playPrevious: () => void;
+  togglePlaylistShuffle: () => void;
+  togglePlaylistLoop: () => void;
+  seek: (offsetSec: number) => boolean;
   returnToLive: () => void;
   setVolume: (volume: number) => void;
   toggleMute: () => void;
@@ -207,6 +221,41 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     engine.play();
   }, [engine, playerState.playbackState]);
 
+  const playPlaylist = useCallback(
+    (
+      tracks: readonly AudioTrack[],
+      options: {
+        startIndex?: number;
+        autoplay?: boolean;
+        shuffle?: boolean;
+        loop?: boolean;
+      } = {},
+    ) => {
+      userPausedRef.current = false;
+      setPlaybackError(null);
+      engine.enterPlaylistMode(tracks, options);
+    },
+    [engine],
+  );
+
+  const playNext = useCallback(() => {
+    engine.playNext();
+  }, [engine]);
+
+  const playPrevious = useCallback(() => {
+    engine.playPrevious();
+  }, [engine]);
+
+  const togglePlaylistShuffle = useCallback(() => {
+    engine.togglePlaylistShuffle();
+  }, [engine]);
+
+  const togglePlaylistLoop = useCallback(() => {
+    engine.togglePlaylistLoop();
+  }, [engine]);
+
+  const seek = useCallback((offsetSec: number) => engine.seek(offsetSec), [engine]);
+
   const returnToLive = useCallback(() => {
     userPausedRef.current = false;
     loadedTrackIdRef.current = null;
@@ -229,6 +278,12 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     playerState,
     playbackError,
     togglePlayPause,
+    playPlaylist,
+    playNext,
+    playPrevious,
+    togglePlaylistShuffle,
+    togglePlaylistLoop,
+    seek,
     returnToLive,
     setVolume: engine.setVolume.bind(engine),
     toggleMute: engine.toggleMute.bind(engine),

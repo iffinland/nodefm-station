@@ -6,12 +6,14 @@
  * ============================================================ */
 
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { PageShell } from '../components/PageShell';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { useStation } from '../features/station';
 import { ShareModal } from '../features/sharing';
 import type { ShareTargetInput } from '../features/sharing';
+import { formatDurationMs } from '../utils/duration';
 import {
   loadPublicPlaylists,
   type PublicPlaylist,
@@ -76,6 +78,9 @@ export default function PlaylistsPage() {
                   key={`${playlist.publisherName}-${playlist.playlistId}`}
                   className="public-playlist-card"
                 >
+                  {playlist.coverUrl && (
+                    <img className="public-playlist-card__cover" src={playlist.coverUrl} alt="" />
+                  )}
                   <div className="public-playlist-card__info">
                     <h3 className="public-playlist-card__title">{playlist.title}</h3>
                     {playlist.description && (
@@ -84,8 +89,21 @@ export default function PlaylistsPage() {
                     <span className="public-playlist-card__visibility">
                       Public station playlist
                     </span>
+                    <span className="public-playlist-card__meta">
+                      {playlist.versionStatus === 'ready'
+                        ? `${playlist.trackCount} tracks · ${formatDurationMs(playlist.totalDurationMs)}`
+                        : playlist.versionStatus === 'missing'
+                          ? 'Published version unavailable'
+                          : 'Published version is malformed'}
+                    </span>
                   </div>
                   <div className="public-playlist-card__actions">
+                    <Link
+                      className="button button--primary"
+                      to={`/playlists/${playlist.playlistId}`}
+                    >
+                      Open
+                    </Link>
                     <button
                       className="button button--secondary"
                       type="button"
@@ -103,9 +121,6 @@ export default function PlaylistsPage() {
                 </li>
               ))}
             </ul>
-            <p className="playlists-page__note">
-              Playlist playback is not available in the current build.
-            </p>
           </>
         )}
         {shareTarget && <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />}

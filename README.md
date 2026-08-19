@@ -1,16 +1,17 @@
 # NodeFM Station
 
-Status: **Phase 6 — COMPLETE**
+Status: **Phase 7 — COMPLETE**
 
 Phase 2 owner embedded Qortium Home validation: **PASSED**
 Phase 3 owner embedded Qortium Home validation: **PASSED**
 Phase 4 owner embedded Qortium Home validation: **PASSED**
 Phase 5 owner embedded Qortium Home validation: **PASSED**
 Phase 6 owner embedded Qortium Home validation: **PASSED**
+Phase 7 owner embedded Qortium Home validation: **PASSED**
 Application name: **NodeFM**
 Priority: **Scheduled Auto-DJ radio station**
 Future Q-Music/community platform: **separate project, explicitly out of scope**
-Next phase: **Phase 7 — Public Playlist Listening**
+Next phase: **Phase 8 — Hardening**
 
 This package is the authoritative starting point for a new Qortium-native radio dApp built from scratch.
 

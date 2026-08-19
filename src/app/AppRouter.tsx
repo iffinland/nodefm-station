@@ -19,6 +19,7 @@ import { LoadingState } from '../components/LoadingState';
 
 const RadioPage = lazy(() => import('../pages/RadioPage'));
 const PlaylistsPage = lazy(() => import('../pages/PlaylistsPage'));
+const PlaylistDetailPage = lazy(() => import('../pages/PlaylistDetailPage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 
 // ── Admin Pages ───────────────────────────────────────────────────
@@ -67,6 +68,7 @@ export function AppRouter() {
           <Route element={<Layout />}>
             <Route index element={<RadioPage />} />
             <Route path="playlists" element={<PlaylistsPage />} />
+            <Route path="playlists/:playlistId" element={<PlaylistDetailPage />} />
             <Route path="about" element={<AboutPage />} />
           </Route>
 

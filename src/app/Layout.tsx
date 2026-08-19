@@ -25,6 +25,10 @@ export function Layout() {
     playerState,
     timeline,
     togglePlayPause,
+    playNext,
+    playPrevious,
+    togglePlaylistShuffle,
+    togglePlaylistLoop,
     setVolume,
     toggleMute,
     returnToLive,
@@ -102,9 +106,47 @@ export function Layout() {
         </div>
         <div className="player-bar__controls">
           {playerState.mode === 'PLAYLIST' && (
-            <button className="player-bar__btn" type="button" onClick={returnToLive}>
-              Return to Live
-            </button>
+            <>
+              <button
+                className="player-bar__btn"
+                type="button"
+                aria-label="Previous track"
+                onClick={playPrevious}
+                disabled={!playerState.playlistQueue}
+              >
+                ⏮
+              </button>
+              <button
+                className="player-bar__btn"
+                type="button"
+                aria-label="Next track"
+                onClick={playNext}
+                disabled={!playerState.playlistQueue}
+              >
+                ⏭
+              </button>
+              <button
+                className={`player-bar__btn${playerState.playlistQueue?.shuffleEnabled ? ' player-bar__btn--active' : ''}`}
+                type="button"
+                aria-label="Toggle shuffle"
+                onClick={togglePlaylistShuffle}
+                disabled={!playerState.playlistQueue}
+              >
+                🔀
+              </button>
+              <button
+                className={`player-bar__btn${playerState.playlistQueue?.loopEnabled ? ' player-bar__btn--active' : ''}`}
+                type="button"
+                aria-label="Toggle loop"
+                onClick={togglePlaylistLoop}
+                disabled={!playerState.playlistQueue}
+              >
+                🔁
+              </button>
+              <button className="player-bar__btn" type="button" onClick={returnToLive}>
+                Return to Live
+              </button>
+            </>
           )}
           <button
             className="player-bar__btn"

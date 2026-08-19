@@ -18,6 +18,14 @@ export type AudioTrack = {
   durationMs: number;
 };
 
+export type PlaylistQueueState = {
+  tracks: readonly AudioTrack[];
+  order: readonly number[];
+  position: number;
+  shuffleEnabled: boolean;
+  loopEnabled: boolean;
+};
+
 export type PlayerState = {
   mode: PlayerMode;
   playbackState: PlaybackState;
@@ -26,4 +34,5 @@ export type PlayerState = {
   volume: number;
   muted: boolean;
   error: string | null;
+  playlistQueue: PlaylistQueueState | null;
 };

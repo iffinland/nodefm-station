@@ -41,12 +41,27 @@ describe('public playlist discovery', () => {
       { service: 'PLAYLIST', name: 'Owner A', identifier: 'nodefm-playlist-a' },
       { service: 'PLAYLIST', name: 'Owner B', identifier: 'nodefm-playlist-b' },
       { service: 'PLAYLIST', name: 'Owner A', identifier: 'nodefm-playlist-a' },
-      { service: 'PLAYLIST', name: 'Owner C', identifier: 'nodefm-playlist-c' },
+      { service: 'PLAYLIST', name: 'Owner A', identifier: 'nodefm-playlist-c' },
     ]);
 
     mockedFetch.mockImplementation(async (ref) => {
       if (ref.identifier === 'nodefm-playlist-a') {
-        return playlist('a', 'Alpha', 'public');
+        return {
+          ...playlist('a', 'Alpha', 'public'),
+          latestVersionId: 'va',
+        };
+      }
+
+      if (ref.identifier === 'nodefm-playlist-version-va') {
+        return {
+          playlistId: 'a',
+          versionId: 'va',
+          versionNumber: 1,
+          createdBy: 'Owner A',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          tracks: [{ trackId: 'ta', durationMs: 1000 }],
+          totalDurationMs: 1000,
+        };
       }
 
       if (ref.identifier === 'nodefm-playlist-b') {
@@ -54,7 +69,25 @@ describe('public playlist discovery', () => {
       }
 
       if (ref.identifier === 'nodefm-playlist-c') {
-        return playlist('c', 'Gamma', 'public');
+        return {
+          ...playlist('c', 'Gamma', 'public'),
+          latestVersionId: 'vc',
+        };
+      }
+
+      if (ref.identifier === 'nodefm-playlist-version-vc') {
+        return {
+          playlistId: 'c',
+          versionId: 'vc',
+          versionNumber: 1,
+          createdBy: 'Owner A',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          tracks: [
+            { trackId: 'tc1', durationMs: 1000 },
+            { trackId: 'tc2', durationMs: 2000 },
+          ],
+          totalDurationMs: 3000,
+        };
       }
 
       throw new Error(`Unexpected fetch: ${String(ref.identifier)}`);
@@ -64,15 +97,20 @@ describe('public playlist discovery', () => {
 
     expect(result.map((item) => item.playlistId)).toEqual(['a', 'c']);
     expect(result.map((item) => item.title)).toEqual(['Alpha', 'Gamma']);
-    expect(mockedFetch).toHaveBeenCalledTimes(3);
+    expect(mockedFetch).toHaveBeenCalledTimes(4);
     expect(mockedSearch).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'PLAYLIST',
         name: 'Owner A',
         query: 'nodefm-playlist-',
         prefix: true,
+        mode: 'ALL',
       }),
     );
+    expect(result[0].trackCount).toBe(1);
+    expect(result[0].totalDurationMs).toBe(1000);
+    expect(result[1].trackCount).toBe(2);
+    expect(result[1].totalDurationMs).toBe(3000);
   });
 
   it('skips resources that cannot be fetched or deserialized', async () => {

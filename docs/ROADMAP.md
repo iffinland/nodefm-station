@@ -236,7 +236,7 @@ hardening/polish phase.
 
 ## Phase 7 — Public Playlist Listening
 
-Status: **not started**
+Status: **COMPLETE**
 
 Build:
 
@@ -253,6 +253,29 @@ Build:
 Exit criteria:
 
 - switching back to live recalculates actual current broadcast state.
+
+Phase 7 exit criterion status: **PASSED** — owner embedded Qortium Home runtime
+validation confirmed public playlist discovery, playlist detail/playback,
+explicit LIVE/PLAYLIST mode separation, play/pause/seek/next/previous,
+shuffle/loop where implemented, route-safe global playback, and Return to Live
+recalculating current UTC radio state.
+
+Owner embedded Qortium Home validation: **PASSED**.
+
+Verified Phase 7 architecture:
+
+- public playlist discovery uses `SEARCH_QDN_RESOURCES` mode `ALL`;
+- private playlists remain excluded from public discovery;
+- public playback loads canonical immutable `PlaylistVersion` resources;
+- playback never uses mutable playlist drafts;
+- one global `AudioEngine` owns both LIVE and PLAYLIST modes;
+- LIVE timeline resolution remains deterministic and clock-derived;
+- Return to Live discards playlist queue and stale LIVE state;
+- public route navigation preserves global audio playback;
+- explicit missing/malformed version and unavailable track/audio states.
+
+Minor visual/UX polish remains deferred to Phase 8 Hardening and is not a
+Phase 7 blocker.
 
 ## Phase 8 — Hardening
 
