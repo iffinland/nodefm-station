@@ -13,6 +13,7 @@ import type { ScheduleEvent, ScheduleRecurrence } from '../../../types/domain';
 import {
   deleteQdnResource,
   fetchQdnResourceData,
+  publishMultipleResources,
   publishResource,
   searchQdnResources,
 } from '../../../qortium/qdn';
@@ -115,6 +116,144 @@ async function persistScheduleDelete(identifier: string, ownerName: string): Pro
   if (result?.accepted !== true) {
     throw new Error('QDN delete was not accepted.');
   }
+}
+
+// ── Coordinated multi-resource event publication ─────────────────
+
+export type ScheduleBatchFailure = {
+  eventId: string;
+  identifier: string;
+  error: string;
+};
+
+export type ScheduleEventBatchResult = {
+  status: 'all-published' | 'partial' | 'failed';
+  publishedEvents: ScheduleEvent[];
+  failedEvents: ScheduleEvent[];
+  failures: ScheduleBatchFailure[];
+};
+
+export type ScheduleRecurrenceApplyResult = {
+  recurrence: ScheduleRecurrence;
+  created: number;
+  updated: number;
+  deleted: number;
+  deleteFailures: Array<{
+    eventId: string;
+    identifier: string;
+    error: string;
+  }>;
+  batch: ScheduleEventBatchResult;
+  reconciledEvents: ScheduleEvent[];
+};
+
+export class ScheduleBatchPartialError extends Error {
+  readonly result: ScheduleRecurrenceApplyResult;
+
+  constructor(result: ScheduleRecurrenceApplyResult) {
+    const failedCount = result.batch.failedEvents.length;
+    const deleteFailureCount = result.deleteFailures.length;
+    super(
+      failedCount > 0
+        ? result.batch.status === 'failed'
+          ? `Recurring program event publication failed: ${failedCount} event(s) failed. Retry to publish the missing events.`
+          : `Recurring program was partially published: ${failedCount} event(s) failed. Review and retry only the missing events.`
+        : deleteFailureCount > 0
+          ? `Recurring program event publication succeeded, but ${deleteFailureCount} obsolete event deletion(s) failed. Retry to complete reconciliation.`
+          : 'Recurring program event publication failed.',
+    );
+    this.name = 'ScheduleBatchPartialError';
+    this.result = result;
+  }
+}
+
+function scheduleEventPublishResource(event: ScheduleEvent, ownerName: string) {
+  assertValidScheduleEvent(event);
+  const data64 = btoa(unescape(encodeURIComponent(serializeScheduleEventForQdn(event))));
+
+  return {
+    service: SCHEDULE_QDN_SERVICE,
+    name: ownerName,
+    identifier: getScheduleEventQdnIdentifier(event.eventId),
+    data64,
+    title: event.title,
+  };
+}
+
+async function publishScheduleEventBatch(
+  events: readonly ScheduleEvent[],
+  ownerName: string,
+): Promise<ScheduleEventBatchResult> {
+  if (events.length === 0) {
+    return { status: 'all-published', publishedEvents: [], failedEvents: [], failures: [] };
+  }
+
+  const resources = events.map((event) => scheduleEventPublishResource(event, ownerName));
+  let response: Awaited<ReturnType<typeof publishMultipleResources>>;
+  try {
+    response = await publishMultipleResources(resources);
+  } catch (error) {
+    return {
+      status: 'failed',
+      publishedEvents: [],
+      failedEvents: [...events],
+      failures: events.map((event) => ({
+        eventId: event.eventId,
+        identifier: getScheduleEventQdnIdentifier(event.eventId),
+        error: error instanceof Error ? error.message : 'QDN batch publication failed.',
+      })),
+    };
+  }
+
+  if (!response.accepted) {
+    return {
+      status: 'failed',
+      publishedEvents: [],
+      failedEvents: [...events],
+      failures: events.map((event) => ({
+        eventId: event.eventId,
+        identifier: getScheduleEventQdnIdentifier(event.eventId),
+        error: 'QDN batch publication was not accepted.',
+      })),
+    };
+  }
+
+  const publishedByIdentifier = new Set(
+    response.published.map((entry) => entry.resource.identifier ?? ''),
+  );
+  const failureByIdentifier = new Map(
+    response.failures.map((entry) => [entry.resource.identifier ?? '', entry.error]),
+  );
+  const publishedEvents: ScheduleEvent[] = [];
+  const failedEvents: ScheduleEvent[] = [];
+  const failures: ScheduleBatchFailure[] = [];
+
+  for (const event of events) {
+    const identifier = getScheduleEventQdnIdentifier(event.eventId);
+    const published = publishedByIdentifier.has(identifier);
+    const failure = failureByIdentifier.get(identifier);
+
+    if (published && !failure) {
+      publishedEvents.push(event);
+    } else {
+      failedEvents.push(event);
+      failures.push({
+        eventId: event.eventId,
+        identifier,
+        error: failure ?? 'QDN batch publication returned no result for this resource.',
+      });
+    }
+  }
+
+  if (publishedEvents.length === events.length) {
+    return { status: 'all-published', publishedEvents, failedEvents, failures };
+  }
+
+  if (publishedEvents.length === 0) {
+    return { status: 'failed', publishedEvents, failedEvents, failures };
+  }
+
+  return { status: 'partial', publishedEvents, failedEvents, failures };
 }
 
 // ── Subscriptions and getters ──────────────────────────────────────
@@ -490,28 +629,10 @@ function futureEventsForRecurrence(recurrenceId: string, nowUtcMs: number): Sche
   });
 }
 
-function replaceFutureRecurrenceEvents(
-  recurrenceId: string,
-  nowUtcMs: number,
-  targetEvents: ScheduleEvent[],
-): void {
-  const otherEvents = scheduleEvents.filter((event) => {
-    if (event.recurrenceId !== recurrenceId) {
-      return true;
-    }
-
-    const start = parseUtcTimestampMs(event.startUtc);
-    return start === null || start < nowUtcMs;
-  });
-
-  scheduleEvents = [...otherEvents, ...targetEvents];
-}
-
-async function applyRecurrence(
+function assertRecurrenceReconcileSafe(
   recurrence: ScheduleRecurrence,
-  ownerName: string,
   nowUtcMs: number,
-): Promise<{ created: number; updated: number; deleted: number }> {
+): ScheduleEvent[] {
   const compileResult = compileScheduleRecurrence(recurrence, nowUtcMs);
 
   if (!compileResult.ok) {
@@ -530,39 +651,117 @@ async function applyRecurrence(
     throw new ScheduleConflictError(conflicts);
   }
 
-  await persistScheduleRecurrence(recurrence, ownerName);
+  return targetEvents;
+}
 
-  const targetById = new Map(targetEvents.map((event) => [event.eventId, event]));
+function replaceFutureRecurrenceEvents(
+  recurrenceId: string,
+  nowUtcMs: number,
+  targetEvents: ScheduleEvent[],
+): void {
+  const otherEvents = scheduleEvents.filter((event) => {
+    if (event.recurrenceId !== recurrenceId) {
+      return true;
+    }
+
+    const start = parseUtcTimestampMs(event.startUtc);
+    return start === null || start < nowUtcMs;
+  });
+
+  scheduleEvents = [...otherEvents, ...targetEvents];
+}
+
+async function reconcileRecurrenceEvents(
+  recurrence: ScheduleRecurrence,
+  ownerName: string,
+  nowUtcMs: number,
+): Promise<ScheduleRecurrenceApplyResult> {
+  const compileResult = compileScheduleRecurrence(recurrence, nowUtcMs);
+
+  if (!compileResult.ok) {
+    throw new Error(compileResult.errors.join(' '));
+  }
+
+  const targetEvents = compileResult.events;
+  const targetValidation = validateScheduleSet(targetEvents);
+
+  if (targetValidation.malformed.length > 0 || targetValidation.conflicts.length > 0) {
+    throw new Error('Recurrence compiler produced an invalid schedule batch.');
+  }
+
+  const conflicts = targetEventsConflict(targetEvents, recurrence.recurrenceId);
+  if (conflicts.length > 0) {
+    throw new ScheduleConflictError(conflicts);
+  }
+
   const existingFuture = futureEventsForRecurrence(recurrence.recurrenceId, nowUtcMs);
   const existingById = new Map(existingFuture.map((event) => [event.eventId, event]));
 
-  let created = 0;
-  let updated = 0;
-  let deleted = 0;
-
+  const eventsToPublish: ScheduleEvent[] = [];
   for (const target of targetEvents) {
     const existing = existingById.get(target.eventId);
 
     if (!existing) {
-      await persistScheduleEvent(target, ownerName);
-      created += 1;
+      eventsToPublish.push(target);
       continue;
     }
 
     if (JSON.stringify(existing) !== JSON.stringify(target)) {
-      await persistScheduleEvent(target, ownerName);
-      updated += 1;
+      eventsToPublish.push(target);
     }
   }
 
-  for (const existing of existingFuture) {
-    if (!targetById.has(existing.eventId)) {
-      await persistScheduleDelete(getScheduleEventQdnIdentifier(existing.eventId), ownerName);
-      deleted += 1;
+  const batch = await publishScheduleEventBatch(eventsToPublish, ownerName);
+  const publishedIds = new Set(batch.publishedEvents.map((event) => event.eventId));
+  const targetIds = new Set(targetEvents.map((event) => event.eventId));
+
+  const nextFuture: ScheduleEvent[] = [];
+  for (const target of targetEvents) {
+    const existing = existingById.get(target.eventId);
+
+    if (batch.status === 'all-published' || publishedIds.has(target.eventId)) {
+      nextFuture.push(target);
+      continue;
+    }
+
+    if (existing) {
+      nextFuture.push(existing);
     }
   }
 
-  return { created, updated, deleted };
+  let deleted = 0;
+  const deleteFailures: ScheduleRecurrenceApplyResult['deleteFailures'] = [];
+  if (batch.status === 'all-published') {
+    for (const existing of existingFuture) {
+      if (!targetIds.has(existing.eventId)) {
+        const identifier = getScheduleEventQdnIdentifier(existing.eventId);
+        try {
+          await persistScheduleDelete(identifier, ownerName);
+          deleted += 1;
+        } catch (error) {
+          nextFuture.push(existing);
+          deleteFailures.push({
+            eventId: existing.eventId,
+            identifier,
+            error: error instanceof Error ? error.message : 'QDN delete was not accepted.',
+          });
+        }
+      }
+    }
+  }
+
+  const created = batch.publishedEvents.filter((event) => !existingById.has(event.eventId)).length;
+  const updated = batch.publishedEvents.filter((event) => existingById.has(event.eventId)).length;
+
+  return {
+    recurrence,
+    created,
+    updated,
+    deleted,
+    deleteFailures,
+    batch,
+    reconciledEvents: nextFuture,
+  };
 }
 
 export async function createScheduleRecurrenceAction(
@@ -571,16 +770,18 @@ export async function createScheduleRecurrenceAction(
   nowUtcMs: number,
 ): Promise<ScheduleRecurrence> {
   const recurrence = createScheduleRecurrence(input);
-  await applyRecurrence(recurrence, ownerName, nowUtcMs);
+  assertRecurrenceReconcileSafe(recurrence, nowUtcMs);
+  await persistScheduleRecurrence(recurrence, ownerName);
+  const result = await reconcileRecurrenceEvents(recurrence, ownerName, nowUtcMs);
 
   scheduleRecurrences = [...scheduleRecurrences, recurrence];
-  const createdCompilation = compileScheduleRecurrence(recurrence, nowUtcMs);
-  replaceFutureRecurrenceEvents(
-    recurrence.recurrenceId,
-    nowUtcMs,
-    createdCompilation.ok ? createdCompilation.events : [],
-  );
+  replaceFutureRecurrenceEvents(recurrence.recurrenceId, nowUtcMs, result.reconciledEvents);
   notify();
+
+  if (result.batch.status !== 'all-published' || result.deleteFailures.length > 0) {
+    throw new ScheduleBatchPartialError(result);
+  }
+
   return recurrence;
 }
 
@@ -598,17 +799,45 @@ export async function updateScheduleRecurrenceAction(
   }
 
   const updated = editScheduleRecurrence(scheduleRecurrences[index], input);
-  await applyRecurrence(updated, ownerName, nowUtcMs);
+  assertRecurrenceReconcileSafe(updated, nowUtcMs);
+  await persistScheduleRecurrence(updated, ownerName);
+  const result = await reconcileRecurrenceEvents(updated, ownerName, nowUtcMs);
 
   scheduleRecurrences = [
     ...scheduleRecurrences.slice(0, index),
     updated,
     ...scheduleRecurrences.slice(index + 1),
   ];
-  const compiled = compileScheduleRecurrence(updated, nowUtcMs);
-  replaceFutureRecurrenceEvents(updated.recurrenceId, nowUtcMs, compiled.ok ? compiled.events : []);
+  replaceFutureRecurrenceEvents(updated.recurrenceId, nowUtcMs, result.reconciledEvents);
   notify();
+
+  if (result.batch.status !== 'all-published' || result.deleteFailures.length > 0) {
+    throw new ScheduleBatchPartialError(result);
+  }
+
   return updated;
+}
+
+/**
+ * Retry only missing/failed concrete occurrences for an already-published
+ * recurrence intent. Deterministic occurrence identifiers are unchanged by
+ * retry, so already-published events are never sent again.
+ */
+export async function retryScheduleRecurrenceEventsAction(
+  recurrenceId: string,
+  ownerName: string,
+  nowUtcMs: number,
+): Promise<ScheduleRecurrenceApplyResult> {
+  const recurrence = scheduleRecurrences.find((item) => item.recurrenceId === recurrenceId);
+  if (!recurrence) {
+    throw new Error(`Schedule recurrence not found: ${recurrenceId}`);
+  }
+
+  assertRecurrenceReconcileSafe(recurrence, nowUtcMs);
+  const result = await reconcileRecurrenceEvents(recurrence, ownerName, nowUtcMs);
+  replaceFutureRecurrenceEvents(recurrence.recurrenceId, nowUtcMs, result.reconciledEvents);
+  notify();
+  return result;
 }
 
 export async function deleteScheduleRecurrenceAction(

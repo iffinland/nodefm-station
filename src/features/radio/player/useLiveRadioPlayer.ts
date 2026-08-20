@@ -218,8 +218,18 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     }
 
     userPausedRef.current = false;
+
+    if (playerState.mode === 'LIVE') {
+      const live = timelineLiveRef.current;
+      if (live && loadedTrackIdRef.current === live.trackId) {
+        // Resume from the canonical UTC offset at this exact moment instead
+        // of the stale paused media time.
+        engine.seek(live.offsetMs / 1000);
+      }
+    }
+
     engine.play();
-  }, [engine, playerState.playbackState]);
+  }, [engine, playerState.mode, playerState.playbackState]);
 
   const playPlaylist = useCallback(
     (

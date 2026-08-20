@@ -17,7 +17,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useLibrary } from '../../hooks/useLibrary';
-import { useAuth } from '../../app/providers/authContext';
+import { useStationIdentity } from '../../features/station';
 import { formatDurationMs, calculateTotalDurationMs } from '../../utils/duration';
 import {
   isPlaylistPublishable,
@@ -35,8 +35,7 @@ import type { EditPlaylistInput } from '../../features/playlists/services/playli
 export default function PlaylistEditorPage() {
   const { playlistId } = useParams<{ playlistId: string }>();
   const navigate = useNavigate();
-  const { auth } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress } = useStationIdentity();
 
   const {
     loaded: plLoaded,

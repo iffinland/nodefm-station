@@ -28,7 +28,7 @@ import type {
   EditPlaylistInput,
   PlaylistVersionInput,
 } from '../features/playlists/services/playlistService';
-import { useAuth } from '../app/providers/authContext';
+import { useStationIdentity } from '../features/station';
 
 export type UsePlaylistsResult = {
   playlists: Playlist[];
@@ -52,8 +52,7 @@ export type UsePlaylistsResult = {
 };
 
 export function usePlaylists(): UsePlaylistsResult {
-  const { auth, ownerName } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress, publisherName } = useStationIdentity();
 
   const [playlists, setPlaylists] = useState<Playlist[]>(getPlaylists());
   const [loaded, setLoaded] = useState(getStoreLoaded());
@@ -72,16 +71,16 @@ export function usePlaylists(): UsePlaylistsResult {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!ownerAddress || !ownerName) return;
+    if (!ownerAddress || !publisherName) return;
     resetPlaylistStore();
     setPlaylists([]);
     setLoaded(false);
     setLoading(true);
-    await loadPlaylistStore(ownerName, ownerAddress);
-  }, [ownerAddress, ownerName]);
+    await loadPlaylistStore(publisherName, ownerAddress);
+  }, [ownerAddress, publisherName]);
 
   useEffect(() => {
-    const action = getStoreLoadAction(ownerName, ownerAddress);
+    const action = getStoreLoadAction(publisherName, ownerAddress);
 
     if (action === 'clear') {
       resetPlaylistStore();
@@ -100,18 +99,18 @@ export function usePlaylists(): UsePlaylistsResult {
       return;
     }
 
-    if (ownerName && ownerAddress) {
+    if (publisherName && ownerAddress) {
       resetPlaylistStore();
       setPlaylists([]);
       setLoaded(false);
       setLoading(true);
       setError(null);
-      loadPlaylistStore(ownerName, ownerAddress);
+      loadPlaylistStore(publisherName, ownerAddress);
     }
-  }, [ownerAddress, ownerName]);
+  }, [ownerAddress, publisherName]);
 
   const throwIfNoName = () => {
-    if (!ownerName) throw new Error('A registered Qortium name is required.');
+    if (!publisherName) throw new Error('A registered Qortium name is required.');
   };
 
   return {
@@ -124,19 +123,19 @@ export function usePlaylists(): UsePlaylistsResult {
     getLatestVersion: getLatestPlaylistVersion,
     createPlaylist: async (input: CreatePlaylistInput) => {
       throwIfNoName();
-      return addPlaylist(input, ownerName!);
+      return addPlaylist(input, publisherName!);
     },
     editPlaylist: async (id: string, input: EditPlaylistInput) => {
       throwIfNoName();
-      return updatePlaylist(id, input, ownerName!);
+      return updatePlaylist(id, input, publisherName!);
     },
     duplicatePlaylist: async (id: string, newTitle?: string) => {
       throwIfNoName();
-      return duplicatePlaylistAction(id, newTitle, ownerName!);
+      return duplicatePlaylistAction(id, newTitle, publisherName!);
     },
     publishVersion: async (input: PlaylistVersionInput) => {
       throwIfNoName();
-      return publishPlaylistVersion(input, ownerName!);
+      return publishPlaylistVersion(input, publisherName!);
     },
     refresh,
   };

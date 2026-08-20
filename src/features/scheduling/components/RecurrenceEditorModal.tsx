@@ -6,16 +6,16 @@
  * for dynamic-program sources.
  * ============================================================ */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
-import { useStation } from '../../station';
+import { useStation, useStationIdentity } from '../../station';
 import { usePlaylists } from '../../../hooks/usePlaylists';
 import { useLibrary } from '../../../hooks/useLibrary';
-import { useAuth } from '../../../app/providers/authContext';
 import { useLikes } from '../../likes/useLikes';
 import { useRequestShow } from '../../dynamic-programs/request-show/useRequestShow';
-import { materializeRequestShowOccurrenceAction } from '../../dynamic-programs/request-show/requestShowStore';
+import { materializeRequestShowOccurrenceBatchAction } from '../../dynamic-programs/request-show/requestShowStore';
 import { useScheduler } from '../hooks/useScheduler';
+import { ScheduleBatchPartialError } from '../services/scheduleStore';
 import { compileScheduleRecurrence } from '../services/recurrenceCompiler';
 import { getNowUtcMs } from '../../radio/timeline';
 import type { ScheduleRecurrence, Track } from '../../../types/domain';
@@ -59,9 +59,10 @@ function rankFromAggregates(
 
 export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceEditorModalProps) {
   const { station } = useStation();
+  const { publisherName } = useStationIdentity();
   const { playlists, getVersions } = usePlaylists();
-  const { createRecurrence, updateRecurrence } = useScheduler();
-  const { ownerName } = useAuth();
+  const { createRecurrence, updateRecurrence, retryRecurrenceEvents, getRecurrence } =
+    useScheduler();
   const { tracks: libraryTracks, loaded: libraryLoaded, loading: libraryLoading } = useLibrary();
   const { definitions, loaded: requestShowLoaded, loading: requestShowLoading } = useRequestShow();
   const timeZone = station?.timezone ?? '';
@@ -79,6 +80,8 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
   const [programDefinitionId, setProgramDefinitionId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryRecurrenceId, setRetryRecurrenceId] = useState<string | null>(null);
+  const savedRecurrenceIdRef = useRef<string | null>(null);
 
   const eligibleTracks = useMemo(
     () => libraryTracks.filter((track) => isValidDurationMs(track.durationMs)),
@@ -145,7 +148,57 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
     );
   };
 
+  const materializeDynamicProgram = async (savedRecurrence: ScheduleRecurrence) => {
+    const definition = definitions.find(
+      (candidate) => candidate.programDefinitionId === programDefinitionId,
+    );
+
+    if (!definition) {
+      throw new Error('Selected Request Show definition is no longer available.');
+    }
+
+    if (!publisherName) {
+      throw new Error('A registered Qortium name is required to materialize Request Show.');
+    }
+
+    if (!libraryLoaded) {
+      throw new Error('Station library is not ready. Wait for library loading to finish.');
+    }
+
+    if (!requestShowLoaded) {
+      throw new Error('Request Show configuration is not ready.');
+    }
+
+    if (!likesReady) {
+      throw new Error('Like records are not ready. Wait for Like loading to finish.');
+    }
+
+    const compiled = compileScheduleRecurrence(savedRecurrence, getNowUtcMs());
+    if (!compiled.ok) {
+      throw new Error(compiled.errors.join(' '));
+    }
+
+    const occurrenceBatch = await materializeRequestShowOccurrenceBatchAction(
+      compiled.events,
+      definition,
+      eligibleTracks,
+      rankFromAggregates(eligibleTracks, aggregates),
+      new Date().toISOString(),
+      publisherName,
+      { reuseExisting: mode === 'create' },
+    );
+
+    if (occurrenceBatch.status !== 'all-published') {
+      const failed = occurrenceBatch.failedScheduleEventIds.join(', ');
+      throw new Error(
+        `Request Show lineups were partially published. Failed events: ${failed || 'all'}.`,
+      );
+    }
+  };
+
   const handleSave = async () => {
+    savedRecurrenceIdRef.current = null;
+
     if (!timeZone) {
       setError('Station timezone is not configured.');
       return;
@@ -189,6 +242,7 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
 
       setSaving(true);
       setError(null);
+      setRetryRecurrenceId(null);
 
       const savedRecurrence =
         mode === 'create'
@@ -197,52 +251,63 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
             ? await updateRecurrence(recurrence.recurrenceId, input)
             : null;
 
+      if (savedRecurrence) {
+        savedRecurrenceIdRef.current = savedRecurrence.recurrenceId;
+      }
+
       if (sourceType === 'dynamic-program' && savedRecurrence) {
-        const definition = definitions.find(
-          (candidate) => candidate.programDefinitionId === programDefinitionId,
-        );
-
-        if (!definition) {
-          throw new Error('Selected Request Show definition is no longer available.');
-        }
-
-        if (!ownerName) {
-          throw new Error('A registered Qortium name is required to materialize Request Show.');
-        }
-
-        if (!libraryLoaded) {
-          throw new Error('Station library is not ready. Wait for library loading to finish.');
-        }
-
-        if (!requestShowLoaded) {
-          throw new Error('Request Show configuration is not ready.');
-        }
-
-        if (!likesReady) {
-          throw new Error('Like records are not ready. Wait for Like loading to finish.');
-        }
-
-        const compiled = compileScheduleRecurrence(savedRecurrence, getNowUtcMs());
-        if (!compiled.ok) {
-          throw new Error(compiled.errors.join(' '));
-        }
-
-        for (const event of compiled.events) {
-          await materializeRequestShowOccurrenceAction(
-            event,
-            definition,
-            eligibleTracks,
-            rankFromAggregates(eligibleTracks, aggregates),
-            new Date().toISOString(),
-            ownerName,
-            { reuseExisting: mode === 'create' },
-          );
-        }
+        await materializeDynamicProgram(savedRecurrence);
       }
 
       onClose();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save recurrence.');
+      if (saveError instanceof ScheduleBatchPartialError) {
+        setRetryRecurrenceId(saveError.result.recurrence.recurrenceId);
+        const failed = saveError.result.batch.failedEvents.map((event) => event.eventId).join(', ');
+        setError(`${saveError.message}${failed ? ` Failed event IDs: ${failed}.` : ''}`);
+      } else {
+        if (savedRecurrenceIdRef.current) {
+          setRetryRecurrenceId(savedRecurrenceIdRef.current);
+        }
+        setError(saveError instanceof Error ? saveError.message : 'Failed to save recurrence.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRetryEvents = async () => {
+    if (!retryRecurrenceId) return;
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const result = await retryRecurrenceEvents(retryRecurrenceId);
+      if (result.batch.status !== 'all-published' || result.deleteFailures.length > 0) {
+        throw new ScheduleBatchPartialError(result);
+      }
+
+      const savedRecurrence = getRecurrence(retryRecurrenceId);
+      if (!savedRecurrence) {
+        throw new Error('Saved recurrence is no longer available.');
+      }
+
+      if (sourceType === 'dynamic-program') {
+        await materializeDynamicProgram(savedRecurrence);
+      }
+
+      setRetryRecurrenceId(null);
+      onClose();
+    } catch (retryError) {
+      if (retryError instanceof ScheduleBatchPartialError) {
+        const failed = retryError.result.batch.failedEvents
+          .map((event) => event.eventId)
+          .join(', ');
+        setError(`${retryError.message}${failed ? ` Failed event IDs: ${failed}.` : ''}`);
+      } else {
+        setError(retryError instanceof Error ? retryError.message : 'Retry failed.');
+      }
     } finally {
       setSaving(false);
     }
@@ -406,6 +471,17 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
         </p>
 
         {error && <p className="form-error">{error}</p>}
+
+        {retryRecurrenceId ? (
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={handleRetryEvents}
+            disabled={saving}
+          >
+            {saving ? 'Retrying…' : 'Retry Failed Events'}
+          </button>
+        ) : null}
 
         <div className="form-actions">
           <button

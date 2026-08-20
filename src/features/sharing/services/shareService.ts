@@ -13,10 +13,6 @@ import {
   getCurrentQdnAppIdentity,
   type QdnHostGlobals,
 } from '../../../qortium/navigation';
-import {
-  getPlaylistQdnIdentifier,
-  PLAYLIST_QDN_SERVICE,
-} from '../../playlists/services/playlistService';
 
 export type ShareKind = 'app' | 'playlist';
 
@@ -24,7 +20,6 @@ export type ShareTargetInput =
   | { kind: 'app' }
   | {
       kind: 'playlist';
-      publisherName: string;
       playlistId: string;
     };
 
@@ -37,39 +32,39 @@ type ClipboardDependencies = {
   document?: Pick<Document, 'body' | 'createElement' | 'execCommand'>;
 };
 
-export function buildAppShareTarget(host: QdnHostGlobals | null = null): string | null {
+export function buildAppShareTarget(host: QdnHostGlobals | null = null): string {
   const identity = getCurrentQdnAppIdentity(
     host ?? (typeof window === 'undefined' ? null : (window as Window & QdnHostGlobals)),
   );
 
-  return identity ? buildQdnUrl(identity) : null;
+  return buildQdnUrl(identity);
 }
 
-export function buildPlaylistShareTarget(publisherName: string, playlistId: string): string {
-  if (!publisherName.trim()) {
-    throw new Error('Station publisher name is required to share a playlist.');
-  }
-
+export function buildPlaylistShareTarget(
+  playlistId: string,
+  host: QdnHostGlobals | null = null,
+): string {
   if (!playlistId.trim()) {
     throw new Error('Playlist ID is required to share a playlist.');
   }
 
-  return buildQdnUrl({
-    service: PLAYLIST_QDN_SERVICE,
-    name: publisherName.trim(),
-    identifier: getPlaylistQdnIdentifier(playlistId.trim()),
-  });
+  const appIdentity = getCurrentQdnAppIdentity(
+    host ?? (typeof window === 'undefined' ? null : (window as Window & QdnHostGlobals)),
+  );
+  const base = buildQdnUrl(appIdentity);
+
+  return `${base}/playlists/${encodeURIComponent(playlistId.trim())}`;
 }
 
 export function buildShareTarget(
   input: ShareTargetInput,
   host: QdnHostGlobals | null = null,
-): string | null {
+): string {
   if (input.kind === 'app') {
     return buildAppShareTarget(host);
   }
 
-  return buildPlaylistShareTarget(input.publisherName, input.playlistId);
+  return buildPlaylistShareTarget(input.playlistId, host);
 }
 
 function copyWithTextarea(text: string, documentRef: ClipboardDependencies['document']): boolean {

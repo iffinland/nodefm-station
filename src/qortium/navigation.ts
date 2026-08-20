@@ -13,6 +13,10 @@
 import { sendBridgeRequest } from './bridge';
 import type { QdnResourceRef } from '../types/domain';
 
+export const NODEFM_APP_SERVICE = 'APP';
+export const NODEFM_APP_NAME = 'NodeFM';
+export const NODEFM_APP_IDENTIFIER = 'Radio-AutoDJ';
+
 export type QdnHostGlobals = {
   _qdnService?: unknown;
   _qdnName?: unknown;
@@ -29,19 +33,23 @@ export function getCurrentQdnAppIdentity(
   host: QdnHostGlobals | null = typeof window === 'undefined'
     ? null
     : (window as WindowWithQdnIdentity),
-): QdnResourceRef | null {
-  const service = cleanGlobal(host?._qdnService).toUpperCase() || 'APP';
-  const name = cleanGlobal(host?._qdnName);
-  const identifier = cleanGlobal(host?._qdnIdentifier);
-
-  if (!name || !identifier) {
-    return null;
-  }
+): QdnResourceRef {
+  const service = cleanGlobal(host?._qdnService).toUpperCase() || NODEFM_APP_SERVICE;
+  const name = cleanGlobal(host?._qdnName) || NODEFM_APP_NAME;
+  const identifier = cleanGlobal(host?._qdnIdentifier) || NODEFM_APP_IDENTIFIER;
 
   return {
     service,
     name,
     identifier,
+  };
+}
+
+export function getCanonicalNodeFmAppIdentity(): QdnResourceRef {
+  return {
+    service: NODEFM_APP_SERVICE,
+    name: NODEFM_APP_NAME,
+    identifier: NODEFM_APP_IDENTIFIER,
   };
 }
 

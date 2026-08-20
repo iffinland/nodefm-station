@@ -70,6 +70,34 @@ Two flows:
 5. store resource reference;
 6. do not duplicate media unless required.
 
+### Listener Uploads
+
+The Library has two owner review sections:
+
+```text
+Station Library
+Listener Uploads
+```
+
+Listener Uploads shows published listener proposals with:
+
+- title;
+- artist;
+- submitter;
+- duration;
+- cover where available;
+- submission time;
+- status (`PENDING`, `ACCEPTED`, or `REJECTED`);
+- an Open Audio action using Qortium Home navigation;
+- Accept / Add to Library;
+- Reject.
+
+Accept creates a normal Station Track using the existing Track service. The
+accepted Track keeps the listener-owned AUDIO reference. Reject records owner
+moderation without deleting listener-owned AUDIO or Submission metadata.
+Moderation authority is enforced in the production store, not only by hidden
+buttons.
+
 ### Edit Track
 
 Station metadata may be editable:

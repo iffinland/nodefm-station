@@ -22,7 +22,7 @@ import {
   resetLibrary,
 } from '../features/library/services/libraryService';
 import type { CreateTrackInput, EditTrackInput } from '../features/tracks/services/trackService';
-import { useAuth } from '../app/providers/authContext';
+import { useStationIdentity } from '../features/station';
 
 export type UseLibraryResult = {
   tracks: Track[];
@@ -38,8 +38,7 @@ export type UseLibraryResult = {
 };
 
 export function useLibrary(): UseLibraryResult {
-  const { auth, ownerName } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress, publisherName } = useStationIdentity();
 
   const [tracks, setTracks] = useState<Track[]>(getLibraryTracks());
   const [loaded, setLoaded] = useState(getLibraryLoaded());
@@ -58,16 +57,16 @@ export function useLibrary(): UseLibraryResult {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!ownerAddress || !ownerName) return;
+    if (!ownerAddress || !publisherName) return;
     resetLibrary();
     setTracks([]);
     setLoaded(false);
     setLoading(true);
-    await loadLibrary(ownerName, ownerAddress);
-  }, [ownerAddress, ownerName]);
+    await loadLibrary(publisherName, ownerAddress);
+  }, [ownerAddress, publisherName]);
 
   useEffect(() => {
-    const action = getLibraryLoadAction(ownerName, ownerAddress);
+    const action = getLibraryLoadAction(publisherName, ownerAddress);
 
     if (action === 'clear') {
       resetLibrary();
@@ -86,25 +85,25 @@ export function useLibrary(): UseLibraryResult {
       return;
     }
 
-    if (ownerName && ownerAddress) {
+    if (publisherName && ownerAddress) {
       resetLibrary();
       setTracks([]);
       setLoaded(false);
       setLoading(true);
       setError(null);
-      loadLibrary(ownerName, ownerAddress);
+      loadLibrary(publisherName, ownerAddress);
     }
-  }, [ownerAddress, ownerName]);
+  }, [ownerAddress, publisherName]);
 
   const removeTrack = useCallback(
     async (trackId: string) => {
-      if (!ownerName) {
+      if (!publisherName) {
         throw new Error('A registered Qortium name is required.');
       }
 
-      await removeTrackFromLibrary(trackId, ownerName);
+      await removeTrackFromLibrary(trackId, publisherName);
     },
-    [ownerName],
+    [publisherName],
   );
 
   return {
@@ -112,18 +111,18 @@ export function useLibrary(): UseLibraryResult {
     loaded,
     loading,
     error,
-    addTrack: ownerName
-      ? (track: Track) => addTrackToLibrary(track, ownerName)
+    addTrack: publisherName
+      ? (track: Track) => addTrackToLibrary(track, publisherName)
       : async () => {
           throw new Error('A registered Qortium name is required.');
         },
-    createTrack: ownerName
-      ? (input: CreateTrackInput) => createAndAddTrack(input, ownerName)
+    createTrack: publisherName
+      ? (input: CreateTrackInput) => createAndAddTrack(input, publisherName)
       : async () => {
           throw new Error('A registered Qortium name is required.');
         },
-    editTrack: ownerName
-      ? (trackId: string, input: EditTrackInput) => updateTrack(trackId, input, ownerName)
+    editTrack: publisherName
+      ? (trackId: string, input: EditTrackInput) => updateTrack(trackId, input, publisherName)
       : async () => {
           throw new Error('A registered Qortium name is required.');
         },

@@ -20,6 +20,7 @@ import { LoadingState } from '../components/LoadingState';
 const RadioPage = lazy(() => import('../pages/RadioPage'));
 const PlaylistsPage = lazy(() => import('../pages/PlaylistsPage'));
 const PlaylistDetailPage = lazy(() => import('../pages/PlaylistDetailPage'));
+const SubmitMusicPage = lazy(() => import('../pages/SubmitMusicPage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 
 // ── Admin Pages ───────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export function AppRouter() {
             <Route index element={<RadioPage />} />
             <Route path="playlists" element={<PlaylistsPage />} />
             <Route path="playlists/:playlistId" element={<PlaylistDetailPage />} />
+            <Route path="submit-music" element={<SubmitMusicPage />} />
             <Route path="about" element={<AboutPage />} />
           </Route>
 

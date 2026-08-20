@@ -9,11 +9,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../qortium/qdn', () => ({
   fetchQdnResourceData: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   searchQdnResources: vi.fn(),
 }));
 
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishMultipleResources,
+  publishResource,
+  searchQdnResources,
+} from '../qortium/qdn';
 import type {
   DynamicProgramDefinition,
   DynamicProgramOccurrence,
@@ -25,6 +31,7 @@ import { getRequestShowOccurrenceQdnIdentifier } from '../features/dynamic-progr
 import {
   getRequestShowOccurrences,
   loadRequestShowOccurrencesForPublisher,
+  materializeRequestShowOccurrenceBatchAction,
   materializeRequestShowOccurrenceAction,
   publishRequestShowOccurrenceAction,
   resetRequestShowStore,
@@ -32,6 +39,7 @@ import {
 
 const mockedFetch = vi.mocked(fetchQdnResourceData);
 const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedSearch = vi.mocked(searchQdnResources);
 
 const OWNER_NAME = 'Owner';
@@ -101,6 +109,7 @@ describe('Request Show occurrence store', () => {
     resetRequestShowStore();
     mockedFetch.mockReset();
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedSearch.mockReset();
     mockedPublish.mockResolvedValue({ accepted: true } as never);
   });
@@ -184,5 +193,112 @@ describe('Request Show occurrence store', () => {
       /publish request show occurrence/i,
     );
     expect(getRequestShowOccurrences()).toEqual([]);
+  });
+
+  it('materializes recurring Request Show lineups in one coordinated batch', async () => {
+    mockedBatchPublish.mockImplementation(async (resources) => {
+      const items = resources;
+      return {
+        accepted: true,
+        action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+        published: items.map((resource) => ({
+          result: {},
+          resource: {
+            identifier: resource.identifier ?? null,
+            name: resource.name,
+            service: resource.service,
+          },
+          transactionSignature: 'signature',
+        })),
+        failures: [],
+      };
+    });
+
+    const events = [
+      {
+        ...event(),
+        eventId: 'event-1',
+        startUtc: '2026-01-02T18:00:00.000Z',
+        endUtc: '2026-01-02T18:30:00.000Z',
+      },
+      {
+        ...event(),
+        eventId: 'event-2',
+        startUtc: '2026-01-03T18:00:00.000Z',
+        endUtc: '2026-01-03T18:30:00.000Z',
+      },
+    ];
+
+    const result = await materializeRequestShowOccurrenceBatchAction(
+      events,
+      definition(),
+      [track('L1', 60_000), track('F1', 120_000)],
+      [{ trackId: 'L1', likeCount: 1, likerAddresses: ['Q-alice'] }],
+      '2026-01-01T00:00:00.000Z',
+      OWNER_NAME,
+    );
+
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    const resources = mockedBatchPublish.mock.calls[0]?.[0] ?? [];
+    expect(resources).toHaveLength(2);
+    expect(result.status).toBe('all-published');
+    expect(getRequestShowOccurrences()).toHaveLength(2);
+  });
+
+  it('reports partial Request Show occurrence publication failures', async () => {
+    mockedBatchPublish.mockResolvedValue({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: [
+        {
+          result: {},
+          resource: {
+            identifier: getRequestShowOccurrenceQdnIdentifier('event-1'),
+            name: OWNER_NAME,
+            service: 'JSON',
+          },
+          transactionSignature: 'signature',
+        },
+      ],
+      failures: [
+        {
+          error: 'publish failed',
+          resource: {
+            identifier: getRequestShowOccurrenceQdnIdentifier('event-2'),
+            name: OWNER_NAME,
+            service: 'JSON',
+          },
+        },
+      ],
+    } as never);
+
+    const events = [
+      {
+        ...event(),
+        eventId: 'event-1',
+        startUtc: '2026-01-02T18:00:00.000Z',
+        endUtc: '2026-01-02T18:30:00.000Z',
+      },
+      {
+        ...event(),
+        eventId: 'event-2',
+        startUtc: '2026-01-03T18:00:00.000Z',
+        endUtc: '2026-01-03T18:30:00.000Z',
+      },
+    ];
+
+    const result = await materializeRequestShowOccurrenceBatchAction(
+      events,
+      definition(),
+      [track('L1', 60_000), track('F1', 120_000)],
+      [{ trackId: 'L1', likeCount: 1, likerAddresses: ['Q-alice'] }],
+      '2026-01-01T00:00:00.000Z',
+      OWNER_NAME,
+    );
+
+    expect(result.status).toBe('partial');
+    expect(result.publishedOccurrences).toHaveLength(1);
+    expect(result.failedScheduleEventIds).toEqual(['event-2']);
+    expect(getRequestShowOccurrences()).toHaveLength(1);
   });
 });

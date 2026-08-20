@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../app/providers/authContext';
 import { isStationOwner } from '../../qortium/auth';
+import { NODEFM_APP_NAME, getCanonicalNodeFmAppIdentity } from '../../qortium/navigation';
 import type { Station } from '../../types/domain';
 import { StationContext, type StationContextValue } from './stationContext';
 import {
@@ -31,7 +32,7 @@ import {
 } from './services/stationStore';
 
 export function StationProvider({ children }: { children: ReactNode }) {
-  const { auth, ownerName } = useAuth();
+  const { auth } = useAuth();
   const userAddress = auth.status === 'authenticated' ? auth.address : null;
 
   const [station, setStation] = useState<Station | null>(getStation());
@@ -53,7 +54,10 @@ export function StationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const action = getStationLoadAction(ownerName);
+    // The canonical NodeFM station config is published under the APP name,
+    // never under the selected account's primary name. This keeps the clean
+    // reset from accidentally resolving an old test identity.
+    const action = getStationLoadAction(NODEFM_APP_NAME);
 
     if (action === 'reuse') {
       setStation(getStation());
@@ -70,8 +74,8 @@ export function StationProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     setPublisherName(null);
-    loadStationConfig(ownerName);
-  }, [ownerName]);
+    loadStationConfig(NODEFM_APP_NAME);
+  }, []);
 
   const refresh = useCallback(async () => {
     resetStationStore();
@@ -80,30 +84,29 @@ export function StationProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     setPublisherName(null);
-    await loadStationConfig(ownerName);
-  }, [ownerName]);
+    await loadStationConfig(NODEFM_APP_NAME);
+  }, []);
 
   const saveStation = useCallback(
     async (input: StationSaveInput) => {
-      if (!ownerName) {
-        throw new Error('A registered Qortium name is required to publish station configuration.');
-      }
-
       if (!userAddress) {
         throw new Error('An authenticated account is required to publish station configuration.');
       }
 
+      const appIdentity = getCanonicalNodeFmAppIdentity();
+      const publisherName = station?.publisherName?.trim() || appIdentity.name;
+
       const nextStation = station
         ? editStation(station, input as EditStationInput)
         : createStation({
-            ...(input as Omit<CreateStationInput, 'ownerAddress' | 'ownerName'>),
+            ...(input as Omit<CreateStationInput, 'publisherName' | 'ownerAddress' | 'ownerName'>),
             ownerAddress: userAddress,
-            ownerName,
+            publisherName,
           });
 
-      return saveStationConfig(nextStation, ownerName);
+      return saveStationConfig(nextStation, nextStation.publisherName);
     },
-    [ownerName, userAddress, station],
+    [userAddress, station],
   );
 
   const isOwner = isStationOwner(userAddress, station ? station.ownerAddress : userAddress);

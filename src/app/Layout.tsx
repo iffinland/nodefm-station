@@ -15,6 +15,7 @@ import { formatDurationMs } from '../utils/duration';
 const PUBLIC_NAV = [
   { to: '/', label: 'Radio' },
   { to: '/playlists', label: 'Playlists' },
+  { to: '/submit-music', label: 'Submit Music' },
   { to: '/about', label: 'About' },
 ] as const;
 

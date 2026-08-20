@@ -16,9 +16,13 @@ import { TrackEditModal } from '../../features/library/components/TrackEditModal
 import { UploadFlow } from '../../features/library/components/UploadFlow';
 import { AddQdnFlow } from '../../features/library/components/AddQdnFlow';
 import { TrackCover } from '../../features/library/components/TrackCover';
+import { ListenerUploadsAdminPanel } from '../../features/listener-submissions/components/ListenerUploadsAdminPanel';
+
+type LibraryTab = 'library' | 'uploads';
 
 export default function LibraryPage() {
   const { tracks, loaded, loading, error, removeTrack, refresh } = useLibrary();
+  const [activeTab, setActiveTab] = useState<LibraryTab>('library');
   const [showUpload, setShowUpload] = useState(false);
   const [showAddQdn, setShowAddQdn] = useState(false);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
@@ -69,42 +73,70 @@ export default function LibraryPage() {
   return (
     <PageShell title="Library">
       <div className="admin-library">
-        {removeError && <p className="form-error">{removeError}</p>}
-        <div className="admin-library__toolbar">
+        <div className="admin-library__tabs" role="tablist" aria-label="Library sections">
           <button
-            className="button button--primary"
+            className={`button ${activeTab === 'library' ? 'button--primary' : 'button--secondary'}`}
             type="button"
-            onClick={() => setShowUpload(true)}
+            role="tab"
+            aria-selected={activeTab === 'library'}
+            onClick={() => setActiveTab('library')}
           >
-            Upload Audio
+            Station Library
           </button>
           <button
-            className="button button--secondary"
+            className={`button ${activeTab === 'uploads' ? 'button--primary' : 'button--secondary'}`}
             type="button"
-            onClick={() => setShowAddQdn(true)}
+            role="tab"
+            aria-selected={activeTab === 'uploads'}
+            onClick={() => setActiveTab('uploads')}
           >
-            Add from QDN
+            Listener Uploads
           </button>
-          <span className="admin-library__count">
-            {tracks.length} track{tracks.length !== 1 ? 's' : ''}
-          </span>
         </div>
 
-        {tracks.length === 0 ? (
-          <p className="admin-library__empty">
-            No tracks in the library yet. Upload audio or add existing QDN resources to get started.
-          </p>
+        {activeTab === 'uploads' ? (
+          <ListenerUploadsAdminPanel />
         ) : (
-          <div className="admin-library__grid">
-            {tracks.map((track) => (
-              <TrackCard
-                key={track.trackId}
-                track={track}
-                onEdit={() => setEditingTrack(track)}
-                onDelete={() => handleDeleteTrack(track.trackId, track.title)}
-              />
-            ))}
-          </div>
+          <>
+            {removeError && <p className="form-error">{removeError}</p>}
+            <div className="admin-library__toolbar">
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={() => setShowUpload(true)}
+              >
+                Upload Audio
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => setShowAddQdn(true)}
+              >
+                Add from QDN
+              </button>
+              <span className="admin-library__count">
+                {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {tracks.length === 0 ? (
+              <p className="admin-library__empty">
+                No tracks in the library yet. Upload audio or add existing QDN resources to get
+                started.
+              </p>
+            ) : (
+              <div className="admin-library__grid">
+                {tracks.map((track) => (
+                  <TrackCard
+                    key={track.trackId}
+                    track={track}
+                    onEdit={() => setEditingTrack(track)}
+                    onDelete={() => handleDeleteTrack(track.trackId, track.title)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

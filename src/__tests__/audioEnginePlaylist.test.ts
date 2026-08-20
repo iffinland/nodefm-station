@@ -119,6 +119,7 @@ describe('AudioEngine PLAYLIST mode', () => {
       schemaVersion: 1,
       stationId: 'station-1',
       name: 'NodeFM',
+      publisherName: 'NodeFM',
       ownerAddress: 'Q-owner',
       timezone: 'Europe/Helsinki',
       defaultRotationPlaylistId: 'default-playlist',

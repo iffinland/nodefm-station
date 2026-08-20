@@ -36,6 +36,8 @@ A listener should be able to:
 9. Browse public station playlists.
 10. Leave the live station temporarily and listen to a selected playlist with normal player controls.
 11. Return to live radio with one clear action.
+12. Submit music for possible inclusion in the station Library. A submission
+    remains listener-owned until the station owner explicitly accepts it.
 
 ### Station owner
 
@@ -57,6 +59,7 @@ The station owner should be able to:
 9. Create and manage station notices.
 10. Read/manage messages directed to the station where supported.
 11. Configure station identity and owner/payment information.
+12. Review and moderate listener-submitted music from the Library admin area.
 
 ## 3. Critical invariant: the station always advances
 

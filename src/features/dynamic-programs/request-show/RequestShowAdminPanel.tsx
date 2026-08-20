@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
-import { useAuth } from '../../../app/providers/authContext';
+import { useStationIdentity } from '../../station';
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useLikes } from '../../likes/useLikes';
 import { useRequestShow } from './useRequestShow';
@@ -42,7 +42,7 @@ function rankFromAggregates(
 }
 
 export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
-  const { ownerName } = useAuth();
+  const { publisherName } = useStationIdentity();
   const { tracks: libraryTracks, loading: libraryLoading } = useLibrary();
   const {
     definitions,
@@ -100,7 +100,7 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
   };
 
   const handleSaveDefinition = async () => {
-    if (!ownerName) {
+    if (!publisherName) {
       setFormError('A registered Qortium name is required.');
       return;
     }
@@ -141,7 +141,7 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
   };
 
   const handleMaterializeMissing = async () => {
-    if (!ownerName) {
+    if (!publisherName) {
       setFormError('A registered Qortium name is required.');
       return;
     }
@@ -182,7 +182,7 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
             eligibleTracks,
             ranked,
             new Date().toISOString(),
-            ownerName,
+            publisherName,
           );
           generated += 1;
         } catch (materializeError) {

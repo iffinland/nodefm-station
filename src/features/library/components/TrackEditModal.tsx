@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import type { Track } from '../../../types/domain';
 import { useLibrary } from '../../../hooks/useLibrary';
+import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
 
 type Props = {
   track: Track;
@@ -16,6 +17,7 @@ type Props = {
 
 export function TrackEditModal({ track, onClose }: Props) {
   const { editTrack } = useLibrary();
+  const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
   const [title, setTitle] = useState(track.title);
   const [artist, setArtist] = useState(track.artist ?? '');
   const [description, setDescription] = useState(track.description ?? '');
@@ -33,19 +35,11 @@ export function TrackEditModal({ track, onClose }: Props) {
         title: title || track.title,
         artist: artist || undefined,
         description: description || undefined,
-        genres: genres
-          ? genres
-              .split(',')
-              .map((g) => g.trim())
-              .filter(Boolean)
-          : undefined,
-        tags: tags
-          ? tags
-              .split(',')
-              .map((t) => t.trim())
-              .filter(Boolean)
-          : undefined,
+        genres: genres.trim() ? getCanonicalTaxonomyValues(genres, genreSuggestions) : undefined,
+        tags: tags.trim() ? getCanonicalTaxonomyValues(tags, tagSuggestions) : undefined,
       });
+      remember('genres', getCanonicalTaxonomyValues(genres, genreSuggestions));
+      remember('tags', getCanonicalTaxonomyValues(tags, tagSuggestions));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save track.');
@@ -72,13 +66,23 @@ export function TrackEditModal({ track, onClose }: Props) {
       </label>
 
       <label className="form-field">
-        Genres (comma-separated)
-        <input type="text" value={genres} onChange={(e) => setGenres(e.target.value)} />
+        Genres
+        <TaxonomyInput
+          kind="genres"
+          value={genres}
+          onChange={setGenres}
+          placeholder="Rock, Electronic"
+        />
       </label>
 
       <label className="form-field">
-        Tags (comma-separated)
-        <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} />
+        Tags
+        <TaxonomyInput
+          kind="tags"
+          value={tags}
+          onChange={setTags}
+          placeholder="chill, upbeat, instrumental"
+        />
       </label>
 
       {error && <p className="form-error">{error}</p>}

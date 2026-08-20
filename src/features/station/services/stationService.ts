@@ -17,8 +17,9 @@ export const STATION_QDN_IDENTIFIER = 'nodefm-station-config';
 export type CreateStationInput = {
   name: string;
   description?: string;
+  publisherName: string;
   ownerAddress: string;
-  ownerName: string;
+  ownerName?: string;
   timezone: string;
   defaultRotationPlaylistId: string;
   defaultRotationPlaylistVersionId: string;
@@ -42,7 +43,7 @@ export type EditStationInput = Partial<
 >;
 
 export type StationSaveInput =
-  Omit<CreateStationInput, 'ownerAddress' | 'ownerName'> | EditStationInput;
+  Omit<CreateStationInput, 'publisherName' | 'ownerAddress' | 'ownerName'> | EditStationInput;
 
 export function getStationQdnIdentifier(): string {
   return STATION_QDN_IDENTIFIER;
@@ -68,6 +69,7 @@ export function isStationConfigRecord(value: unknown): value is Station {
     typeof candidate.stationId === 'string' &&
     candidate.stationId.trim() !== '' &&
     isNonEmptyTrimmedString(candidate.name) &&
+    isNonEmptyTrimmedString(candidate.publisherName) &&
     isNonEmptyTrimmedString(candidate.ownerAddress) &&
     isNonEmptyTrimmedString(candidate.timezone) &&
     isNonEmptyTrimmedString(candidate.defaultRotationPlaylistId) &&
@@ -89,7 +91,7 @@ export function createStation(input: CreateStationInput): Station {
     throw new Error('Station owner address is required.');
   }
 
-  if (!isNonEmptyTrimmedString(input.ownerName)) {
+  if (!isNonEmptyTrimmedString(input.publisherName)) {
     throw new Error('Station publisher name is required.');
   }
 
@@ -116,7 +118,8 @@ export function createStation(input: CreateStationInput): Station {
     stationId: generateId(),
     name: input.name.trim(),
     description: input.description,
-    ownerName: input.ownerName.trim(),
+    publisherName: input.publisherName.trim(),
+    ownerName: input.ownerName?.trim(),
     ownerAddress: input.ownerAddress,
     timezone: input.timezone.trim(),
     defaultRotationPlaylistId: input.defaultRotationPlaylistId.trim(),

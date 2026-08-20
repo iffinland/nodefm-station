@@ -110,7 +110,6 @@ export default function PlaylistsPage() {
                       onClick={() =>
                         setShareTarget({
                           kind: 'playlist',
-                          publisherName: playlist.publisherName,
                           playlistId: playlist.playlistId,
                         })
                       }

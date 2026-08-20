@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ScheduleEvent, ScheduleRecurrence } from '../../../types/domain';
-import { useAuth } from '../../../app/providers/authContext';
+import { useStationIdentity } from '../../station';
 import { getNowUtcMs } from '../../radio/timeline';
 import {
   createScheduleEventAction,
@@ -22,6 +22,7 @@ import {
   getScheduleRecurrences,
   getScheduleEventById,
   loadScheduleStore,
+  retryScheduleRecurrenceEventsAction,
   resetScheduleStore,
   subscribeToScheduleStore,
   updateScheduleEventAction,
@@ -33,6 +34,7 @@ import type {
   EditScheduleEventInput,
   EditScheduleRecurrenceInput,
 } from '../services/scheduleService';
+import type { ScheduleRecurrenceApplyResult } from '../services/scheduleStore';
 
 export type UseSchedulerResult = {
   events: ScheduleEvent[];
@@ -52,13 +54,13 @@ export type UseSchedulerResult = {
     recurrenceId: string,
     input: EditScheduleRecurrenceInput,
   ) => Promise<ScheduleRecurrence>;
+  retryRecurrenceEvents: (recurrenceId: string) => Promise<ScheduleRecurrenceApplyResult>;
   deleteRecurrence: (recurrenceId: string) => Promise<void>;
   refresh: () => Promise<void>;
 };
 
 export function useScheduler(): UseSchedulerResult {
-  const { auth, ownerName } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress, publisherName } = useStationIdentity();
 
   const [events, setEvents] = useState<ScheduleEvent[]>(getScheduleEvents());
   const [recurrences, setRecurrences] = useState<ScheduleRecurrence[]>(getScheduleRecurrences());
@@ -79,7 +81,7 @@ export function useScheduler(): UseSchedulerResult {
   }, []);
 
   useEffect(() => {
-    const action = getScheduleLoadAction(ownerName, ownerAddress);
+    const action = getScheduleLoadAction(publisherName, ownerAddress);
 
     if (action === 'clear') {
       resetScheduleStore();
@@ -100,19 +102,19 @@ export function useScheduler(): UseSchedulerResult {
       return;
     }
 
-    if (ownerName && ownerAddress) {
+    if (publisherName && ownerAddress) {
       resetScheduleStore();
       setEvents([]);
       setRecurrences([]);
       setLoaded(false);
       setLoading(true);
       setError(null);
-      void loadScheduleStore(ownerName, ownerAddress);
+      void loadScheduleStore(publisherName, ownerAddress);
     }
-  }, [ownerAddress, ownerName]);
+  }, [ownerAddress, publisherName]);
 
   const refresh = useCallback(async () => {
-    if (!ownerAddress || !ownerName) {
+    if (!ownerAddress || !publisherName) {
       return;
     }
 
@@ -122,14 +124,14 @@ export function useScheduler(): UseSchedulerResult {
     setLoaded(false);
     setLoading(true);
     setError(null);
-    await loadScheduleStore(ownerName, ownerAddress);
-  }, [ownerAddress, ownerName]);
+    await loadScheduleStore(publisherName, ownerAddress);
+  }, [ownerAddress, publisherName]);
 
   const throwIfNoName = useCallback(() => {
-    if (!ownerName || !ownerAddress) {
+    if (!publisherName || !ownerAddress) {
       throw new Error('A registered Qortium name is required.');
     }
-  }, [ownerAddress, ownerName]);
+  }, [ownerAddress, publisherName]);
 
   return {
     events,
@@ -141,31 +143,35 @@ export function useScheduler(): UseSchedulerResult {
     getRecurrence: getScheduleRecurrenceById,
     createEvent: async (input) => {
       throwIfNoName();
-      return createScheduleEventAction(input, ownerName!);
+      return createScheduleEventAction(input, publisherName!);
     },
     updateEvent: async (eventId, input) => {
       throwIfNoName();
-      return updateScheduleEventAction(eventId, input, ownerName!);
+      return updateScheduleEventAction(eventId, input, publisherName!);
     },
     deleteEvent: async (eventId) => {
       throwIfNoName();
-      return deleteScheduleEventAction(eventId, ownerName!);
+      return deleteScheduleEventAction(eventId, publisherName!);
     },
     createRecurrence: async (input) => {
       throwIfNoName();
       return createScheduleRecurrenceAction(
         { ...input, ownerAddress: ownerAddress! },
-        ownerName!,
+        publisherName!,
         getNowUtcMs(),
       );
     },
     updateRecurrence: async (recurrenceId, input) => {
       throwIfNoName();
-      return updateScheduleRecurrenceAction(recurrenceId, input, ownerName!, getNowUtcMs());
+      return updateScheduleRecurrenceAction(recurrenceId, input, publisherName!, getNowUtcMs());
+    },
+    retryRecurrenceEvents: async (recurrenceId) => {
+      throwIfNoName();
+      return retryScheduleRecurrenceEventsAction(recurrenceId, publisherName!, getNowUtcMs());
     },
     deleteRecurrence: async (recurrenceId) => {
       throwIfNoName();
-      return deleteScheduleRecurrenceAction(recurrenceId, ownerName!, getNowUtcMs());
+      return deleteScheduleRecurrenceAction(recurrenceId, publisherName!, getNowUtcMs());
     },
     refresh,
   };

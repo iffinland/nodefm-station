@@ -13,7 +13,12 @@ import type {
   ScheduleEvent,
   Track,
 } from '../../../types/domain';
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../../../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishMultipleResources,
+  publishResource,
+  searchQdnResources,
+} from '../../../qortium/qdn';
 import type { RankedLikedTrack } from '../../likes/services/likeService';
 import {
   DYNAMIC_PROGRAM_IDENTIFIER_PREFIX,
@@ -92,6 +97,88 @@ export async function persistRequestShowOccurrence(
     data64,
     title: `Request Show ${occurrence.scheduleEventId}`,
   });
+}
+
+export type RequestShowOccurrenceBatchResult = {
+  status: 'all-published' | 'partial' | 'failed';
+  publishedOccurrences: DynamicProgramOccurrence[];
+  failedScheduleEventIds: string[];
+  failures: Array<{
+    scheduleEventId: string;
+    identifier: string;
+    error: string;
+  }>;
+};
+
+async function publishRequestShowOccurrencesBatch(
+  occurrences: readonly DynamicProgramOccurrence[],
+  ownerName: string,
+): Promise<RequestShowOccurrenceBatchResult> {
+  if (occurrences.length === 0) {
+    return {
+      status: 'all-published',
+      publishedOccurrences: [],
+      failedScheduleEventIds: [],
+      failures: [],
+    };
+  }
+
+  const resources = occurrences.map((occurrence) => {
+    if (!isValidDynamicProgramOccurrence(occurrence)) {
+      throw new Error('Request Show occurrence is invalid.');
+    }
+
+    return {
+      service: REQUEST_SHOW_QDN_SERVICE,
+      name: ownerName,
+      identifier: getRequestShowOccurrenceQdnIdentifier(occurrence.scheduleEventId),
+      data64: btoa(
+        unescape(encodeURIComponent(serializeDynamicProgramOccurrenceForQdn(occurrence))),
+      ),
+      title: `Request Show ${occurrence.scheduleEventId}`,
+    };
+  });
+
+  const response = await publishMultipleResources(resources);
+  if (!response.accepted) {
+    throw new Error('QDN Request Show occurrence batch was not accepted.');
+  }
+
+  const publishedByIdentifier = new Set(
+    response.published.map((entry) => entry.resource.identifier ?? ''),
+  );
+  const failureByIdentifier = new Map(
+    response.failures.map((entry) => [entry.resource.identifier ?? '', entry.error]),
+  );
+  const publishedOccurrences: DynamicProgramOccurrence[] = [];
+  const failedScheduleEventIds: string[] = [];
+  const failures: RequestShowOccurrenceBatchResult['failures'] = [];
+
+  for (const occurrence of occurrences) {
+    const identifier = getRequestShowOccurrenceQdnIdentifier(occurrence.scheduleEventId);
+
+    if (publishedByIdentifier.has(identifier) && !failureByIdentifier.has(identifier)) {
+      publishedOccurrences.push(occurrence);
+    } else {
+      failedScheduleEventIds.push(occurrence.scheduleEventId);
+      failures.push({
+        scheduleEventId: occurrence.scheduleEventId,
+        identifier,
+        error:
+          failureByIdentifier.get(identifier) ??
+          'QDN Request Show occurrence batch returned no result for this resource.',
+      });
+    }
+  }
+
+  const status =
+    publishedOccurrences.length === occurrences.length
+      ? 'all-published'
+      : publishedOccurrences.length === 0
+        ? 'failed'
+        : 'partial';
+
+  return { status, publishedOccurrences, failedScheduleEventIds, failures };
 }
 
 export function subscribeToRequestShowStore(listener: RequestShowListener): () => void {
@@ -437,6 +524,62 @@ export async function materializeRequestShowOccurrenceAction(
   }
 
   return publishRequestShowOccurrenceAction(generation.occurrence, ownerName);
+}
+
+/**
+ * Materialize multiple Request Show occurrences in one coordinated
+ * QDN publication request. This is used when one recurring-program
+ * action creates several concrete schedule events.
+ *
+ * Like all multi-publish calls, this is coordinated but NOT atomic;
+ * the caller must inspect the returned partial/failure state.
+ */
+export async function materializeRequestShowOccurrenceBatchAction(
+  scheduleEvents: readonly ScheduleEvent[],
+  definition: DynamicProgramDefinition,
+  eligibleTracks: readonly Track[],
+  rankedLikedTracks: readonly RankedLikedTrack[],
+  generatedAt: string,
+  ownerName: string,
+  options: { reuseExisting?: boolean } = {},
+): Promise<RequestShowOccurrenceBatchResult> {
+  const occurrencesToPublish: DynamicProgramOccurrence[] = [];
+
+  for (const scheduleEvent of scheduleEvents) {
+    const existing = getRequestShowOccurrenceByScheduleEventId(scheduleEvent.eventId);
+    if (existing && options.reuseExisting !== false) {
+      continue;
+    }
+
+    const generation = generateRequestShowOccurrence(
+      scheduleEvent,
+      definition,
+      eligibleTracks,
+      rankedLikedTracks,
+      generatedAt,
+    );
+
+    if (!generation.ok) {
+      throw new Error(generation.message);
+    }
+
+    occurrencesToPublish.push(generation.occurrence);
+  }
+
+  const result = await publishRequestShowOccurrencesBatch(occurrencesToPublish, ownerName);
+  const publishedById = new Set(
+    result.publishedOccurrences.map((occurrence) => occurrence.scheduleEventId),
+  );
+
+  requestShowOccurrences = [
+    ...requestShowOccurrences.filter(
+      (occurrence) => !publishedById.has(occurrence.scheduleEventId),
+    ),
+    ...result.publishedOccurrences,
+  ];
+  notify();
+
+  return result;
 }
 
 export function resetRequestShowStore(): void {

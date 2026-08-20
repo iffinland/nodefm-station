@@ -24,11 +24,11 @@ import {
   type SelectPublishSourceResult,
 } from '../../../qortium/qdn';
 import { useLibrary } from '../../../hooks/useLibrary';
-import { useAuth } from '../../../app/providers/authContext';
+import { useStationIdentity } from '../../station';
+import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
+import { publishTrackCoverImage, readCoverFile } from '../services/coverService';
 import { resolveAudioDurationFromUrl } from '../../../utils/duration';
-import { getAudioQdnIdentifier, getCoverQdnIdentifier } from '../../tracks/services/trackService';
-
-const COVER_INLINE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB — matches proven inline limit
+import { getAudioQdnIdentifier } from '../../tracks/services/trackService';
 
 type Step = 'select' | 'metadata' | 'publishing' | 'resolving' | 'done' | 'error';
 
@@ -56,8 +56,8 @@ export function UploadFlow({
   onComplete: () => void;
 }) {
   const { createTrack } = useLibrary();
-  const { auth, ownerName } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress, publisherName } = useStationIdentity();
+  const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<UploadState>({
@@ -105,33 +105,29 @@ export function UploadFlow({
   // ── Cover: browser File → base64 (small images only) ────────────
 
   const handleCoverSelected = useCallback(async (file: File) => {
-    if (file.size > COVER_INLINE_MAX_BYTES) {
-      setState((s) => ({
-        ...s,
-        error: `Cover image is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 2 MB.`,
-      }));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      const cover = await readCoverFile(file);
       setState((s) => ({
         ...s,
         coverFile: file,
-        coverBase64: reader.result as string,
+        coverBase64: cover.dataUrl,
         error: null,
       }));
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      setState((s) => ({
+        ...s,
+        error: error instanceof Error ? error.message : 'Failed to read cover image.',
+      }));
+    }
   }, []);
 
   // ── Publish ────────────────────────────────────────────────────
 
   const handlePublish = useCallback(async () => {
-    if (!state.audioSource || state.audioSource.canceled || !ownerAddress || !ownerName) return;
+    if (!state.audioSource || state.audioSource.canceled || !ownerAddress || !publisherName) return;
 
     // Block if no registered Qortium name
-    if (!ownerName) {
+    if (!publisherName) {
       setState((s) => ({
         ...s,
         step: 'error',
@@ -143,7 +139,6 @@ export function UploadFlow({
     setState((s) => ({ ...s, step: 'publishing', error: null, partialResult: null }));
 
     let audioIdentifier: string | null = null;
-    let coverIdentifier: string | null = null;
     const partialMessages: string[] = [];
 
     try {
@@ -152,7 +147,7 @@ export function UploadFlow({
 
       const audioResult = await publishResource({
         service: 'AUDIO',
-        name: ownerName,
+        name: publisherName,
         identifier: audioIdentifier,
         sourceToken: state.audioSource.sourceToken,
         title: state.title,
@@ -164,27 +159,16 @@ export function UploadFlow({
       }
 
       // 2. Publish cover (optional, non-fatal)
-      let coverRef: { service: string; name: string; identifier: string } | undefined;
+      let coverRef: { service: string; name: string; identifier?: string } | undefined;
 
       if (state.coverFile && state.coverBase64) {
         try {
-          coverIdentifier = getCoverQdnIdentifier();
-          const coverBase64Data = state.coverBase64.split(',')[1];
-
-          await publishResource({
-            service: 'IMAGE',
-            name: ownerName,
-            identifier: coverIdentifier,
-            data64: coverBase64Data,
-            title: `${state.title} cover`,
-            filename: state.coverFile.name,
+          coverRef = await publishTrackCoverImage({
+            publisherName,
+            title: state.title,
+            file: state.coverFile,
+            data64: state.coverBase64.split(',')[1] ?? '',
           });
-
-          coverRef = {
-            service: 'IMAGE',
-            name: ownerName,
-            identifier: coverIdentifier,
-          };
         } catch {
           partialMessages.push('Cover publication failed. You can add a cover later.');
         }
@@ -198,7 +182,7 @@ export function UploadFlow({
       try {
         const audioRef = {
           service: 'AUDIO',
-          name: ownerName,
+          name: publisherName,
           identifier: audioIdentifier,
         };
         await ensureQdnResourceReady(audioRef);
@@ -228,17 +212,11 @@ export function UploadFlow({
       }
 
       // 4. Create & publish Track metadata
-      const genres = state.genres
-        ? state.genres
-            .split(',')
-            .map((g) => g.trim())
-            .filter(Boolean)
+      const genres = state.genres.trim()
+        ? getCanonicalTaxonomyValues(state.genres, genreSuggestions)
         : undefined;
-      const tags = state.tags
-        ? state.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
+      const tags = state.tags.trim()
+        ? getCanonicalTaxonomyValues(state.tags, tagSuggestions)
         : undefined;
 
       await createTrack({
@@ -247,7 +225,7 @@ export function UploadFlow({
         description: state.description || undefined,
         audio: {
           service: 'AUDIO',
-          name: ownerName,
+          name: publisherName,
           identifier: audioIdentifier,
         },
         cover: coverRef,
@@ -257,6 +235,9 @@ export function UploadFlow({
         source: 'station-upload',
         ownerAddress,
       });
+
+      remember('genres', genres ?? []);
+      remember('tags', tags ?? []);
 
       setState((s) => ({
         ...s,
@@ -280,8 +261,11 @@ export function UploadFlow({
     state.coverFile,
     state.coverBase64,
     ownerAddress,
-    ownerName,
+    publisherName,
     createTrack,
+    genreSuggestions,
+    tagSuggestions,
+    remember,
   ]);
 
   return (
@@ -290,7 +274,7 @@ export function UploadFlow({
         <div className="upload-flow__select">
           <p>Select an audio file to upload to the station library.</p>
           <p className="upload-flow__hint">Supported formats: MP3, WAV, FLAC, OGG, AAC, M4A</p>
-          {!ownerName && (
+          {!publisherName && (
             <p className="upload-flow__warning">
               ⚠️ A registered Qortium name is required to publish resources.
             </p>
@@ -300,7 +284,7 @@ export function UploadFlow({
             className="button button--primary"
             type="button"
             onClick={handleSelectAudio}
-            disabled={!ownerName}
+            disabled={!publisherName}
           >
             Select Audio File
           </button>
@@ -349,21 +333,21 @@ export function UploadFlow({
           </label>
 
           <label className="form-field">
-            Genres (comma-separated)
-            <input
-              type="text"
+            Genres
+            <TaxonomyInput
+              kind="genres"
               value={state.genres}
-              onChange={(e) => setState((s) => ({ ...s, genres: e.target.value }))}
+              onChange={(value) => setState((s) => ({ ...s, genres: value }))}
               placeholder="Rock, Electronic, Jazz"
             />
           </label>
 
           <label className="form-field">
-            Tags (comma-separated)
-            <input
-              type="text"
+            Tags
+            <TaxonomyInput
+              kind="tags"
               value={state.tags}
-              onChange={(e) => setState((s) => ({ ...s, tags: e.target.value }))}
+              onChange={(value) => setState((s) => ({ ...s, tags: value }))}
               placeholder="chill, upbeat, instrumental"
             />
           </label>
@@ -410,7 +394,7 @@ export function UploadFlow({
               className="button button--primary"
               type="button"
               onClick={handlePublish}
-              disabled={!state.title || !ownerName}
+              disabled={!state.title || !publisherName}
             >
               Publish Track
             </button>

@@ -8,6 +8,7 @@
 
 import type { Station } from '../../../types/domain';
 import { fetchQdnResourceData, publishResource, searchQdnResources } from '../../../qortium/qdn';
+import { NODEFM_APP_NAME } from '../../../qortium/navigation';
 import {
   STATION_QDN_IDENTIFIER,
   STATION_QDN_SERVICE,
@@ -156,7 +157,11 @@ export async function loadStationConfig(preferredName: string | null = null): Pr
       const uniqueMatches = new Map<string, (typeof results)[number]>();
 
       for (const result of results) {
-        if (result.identifier !== STATION_QDN_IDENTIFIER || !result.name) {
+        if (
+          result.identifier !== STATION_QDN_IDENTIFIER ||
+          !result.name ||
+          result.name !== NODEFM_APP_NAME
+        ) {
           continue;
         }
 
@@ -183,7 +188,7 @@ export async function loadStationConfig(preferredName: string | null = null): Pr
     }
 
     station = resolvedStation;
-    stationPublisherName = resolvedStation?.ownerName?.trim() || resolvedPublisherName || null;
+    stationPublisherName = resolvedStation?.publisherName?.trim() || resolvedPublisherName || null;
     stationLoaded = true;
   } catch (error) {
     if (epoch !== stationEpoch || stationLoadKey !== targetKey) {

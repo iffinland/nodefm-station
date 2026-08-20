@@ -49,6 +49,51 @@ export type PublishResult = {
   transactionSignature?: string;
 };
 
+export type PublishMultipleResource = {
+  /** QDN service name (e.g. 'JSON', 'IMAGE') */
+  service: string;
+  /** Publishing name (unique per service + identifier) */
+  name: string;
+  /** Optional identifier (use 'default' for standard) */
+  identifier?: string;
+  /** Base64-encoded resource data for inline resources */
+  data64?: string;
+  /** Source token from SELECT_QDN_PUBLISH_SOURCE for large files */
+  sourceToken?: string;
+  title?: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+  filename?: string;
+  fee?: number;
+};
+
+export type MultiplePublishPublishedResource = {
+  result: unknown;
+  resource: {
+    identifier: string | null;
+    name: string;
+    service: string;
+  };
+  transactionSignature: string;
+};
+
+export type MultiplePublishFailedResource = {
+  error: string;
+  resource: {
+    identifier: string | null;
+    name: string;
+    service: string;
+  };
+};
+
+export type MultiplePublishResult = {
+  accepted: boolean;
+  action: string;
+  published: MultiplePublishPublishedResource[];
+  failures: MultiplePublishFailedResource[];
+};
+
 /**
  * Publish a QDN resource.
  *
@@ -73,6 +118,46 @@ export async function publishResource(input: PublishInput): Promise<PublishResul
   if (typeof input.fee === 'number') payload.fee = input.fee;
 
   return sendBridgeRequest(payload) as Promise<PublishResult>;
+}
+
+/**
+ * Publish several QDN resources through one Home approval request.
+ *
+ * This uses the current `PUBLISH_MULTIPLE_QDN_RESOURCES` bridge action.
+ * Home processes resources sequentially; each is still its own QDN
+ * transaction. The result therefore has explicit `published` and
+ * `failures` arrays and must not be treated as atomic.
+ */
+export async function publishMultipleResources(
+  resources: readonly PublishMultipleResource[],
+): Promise<MultiplePublishResult> {
+  if (resources.length === 0) {
+    throw new Error('At least one resource is required for QDN batch publication.');
+  }
+
+  const payloadResources = resources.map((resource) => {
+    const payload: Record<string, unknown> = {
+      service: resource.service,
+      name: resource.name,
+    };
+
+    if (resource.identifier) payload.identifier = resource.identifier;
+    if (resource.data64) payload.data64 = resource.data64;
+    if (resource.sourceToken) payload.sourceToken = resource.sourceToken;
+    if (resource.title) payload.title = resource.title;
+    if (resource.description) payload.description = resource.description;
+    if (resource.category) payload.category = resource.category;
+    if (resource.tags?.length) payload.tags = resource.tags;
+    if (resource.filename) payload.filename = resource.filename;
+    if (typeof resource.fee === 'number') payload.fee = resource.fee;
+
+    return payload;
+  });
+
+  return sendBridgeRequest({
+    action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+    resources: payloadResources,
+  }) as Promise<MultiplePublishResult>;
 }
 
 // ── Select Publish Source (Native File Picker) ──────────────────────

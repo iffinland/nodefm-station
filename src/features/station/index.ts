@@ -1,6 +1,8 @@
 export { StationProvider } from './StationProvider';
 export { useStation } from './stationContext';
+export { useStationIdentity } from './useStationIdentity';
 export type { StationContextValue } from './stationContext';
+export type { StationIdentity } from './useStationIdentity';
 export {
   createStation,
   editStation,

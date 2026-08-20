@@ -15,7 +15,10 @@ import {
   ensureQdnResourceReady,
 } from '../../../qortium/qdn';
 import { useLibrary } from '../../../hooks/useLibrary';
-import { useAuth } from '../../../app/providers/authContext';
+import { useStationIdentity } from '../../station';
+import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
+import { publishTrackCoverImage, readCoverFile } from '../services/coverService';
+import { buildAddQdnTrackInput } from '../services/addQdnService';
 import {
   resolveAudioDurationFromUrl,
   formatDurationMs,
@@ -39,6 +42,9 @@ type State = {
   description: string;
   genres: string;
   tags: string;
+  coverFile: File | null;
+  coverData64: string | null;
+  coverWarning: string | null;
   error: string | null;
 };
 
@@ -50,8 +56,8 @@ export function AddQdnFlow({
   onComplete: () => void;
 }) {
   const { createTrack } = useLibrary();
-  const { auth } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress, publisherName } = useStationIdentity();
+  const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
 
   const [state, setState] = useState<State>({
     step: 'search',
@@ -67,6 +73,9 @@ export function AddQdnFlow({
     description: '',
     genres: '',
     tags: '',
+    coverFile: null,
+    coverData64: null,
+    coverWarning: null,
     error: null,
   });
 
@@ -103,6 +112,9 @@ export function AddQdnFlow({
       title: resource.metadata?.title ?? resource.name ?? '',
       artist: '',
       durationMs: null,
+      coverFile: null,
+      coverData64: null,
+      coverWarning: null,
     }));
 
     // Resolve duration
@@ -126,6 +138,24 @@ export function AddQdnFlow({
     }
   }, []);
 
+  const handleCoverSelected = useCallback(async (file: File) => {
+    try {
+      const cover = await readCoverFile(file);
+      setState((s) => ({
+        ...s,
+        coverFile: file,
+        coverData64: cover.data64,
+        coverWarning: null,
+        error: null,
+      }));
+    } catch (error) {
+      setState((s) => ({
+        ...s,
+        error: error instanceof Error ? error.message : 'Failed to read cover image.',
+      }));
+    }
+  }, []);
+
   const handleImport = useCallback(async () => {
     if (!state.selected || !ownerAddress) return;
 
@@ -139,39 +169,56 @@ export function AddQdnFlow({
       return;
     }
 
-    setState((s) => ({ ...s, step: 'importing', error: null }));
+    setState((s) => ({ ...s, step: 'importing', error: null, coverWarning: null }));
 
     try {
-      const genres = state.genres
-        ? state.genres
-            .split(',')
-            .map((g) => g.trim())
-            .filter(Boolean)
+      const genres = state.genres.trim()
+        ? getCanonicalTaxonomyValues(state.genres, genreSuggestions)
         : undefined;
-      const tags = state.tags
-        ? state.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
+      const tags = state.tags.trim()
+        ? getCanonicalTaxonomyValues(state.tags, tagSuggestions)
         : undefined;
+      let coverRef: { service: string; name: string; identifier?: string } | undefined;
+      let coverWarning: string | null = null;
 
-      await createTrack({
-        title: state.title || state.selected.name || 'Untitled',
-        artist: state.artist || state.selected.metadata?.title || undefined,
-        description: state.description || undefined,
-        audio: {
-          service: state.selected.service,
-          name: state.selected.name,
-          identifier: state.selected.identifier || 'default',
-        },
-        durationMs: state.durationMs,
-        genres,
-        tags,
-        source: 'qdn-existing',
-        ownerAddress,
-      });
+      if (state.coverFile && state.coverData64 && publisherName) {
+        try {
+          coverRef = await publishTrackCoverImage({
+            publisherName,
+            title: state.title || state.selected.name || 'Untitled',
+            file: state.coverFile,
+            data64: state.coverData64,
+          });
+        } catch (error) {
+          coverWarning =
+            error instanceof Error
+              ? `Cover publication failed; the track was added without a cover. ${error.message}`
+              : 'Cover publication failed; the track was added without a cover.';
+        }
+      }
 
-      setState((s) => ({ ...s, step: 'done' }));
+      await createTrack(
+        buildAddQdnTrackInput({
+          title: state.title || state.selected.name || 'Untitled',
+          artist: state.artist || state.selected.metadata?.title || undefined,
+          description: state.description || undefined,
+          audio: {
+            service: state.selected.service,
+            name: state.selected.name,
+            identifier: state.selected.identifier || 'default',
+          },
+          durationMs: state.durationMs,
+          genres,
+          tags,
+          cover: coverRef,
+          ownerAddress,
+        }),
+      );
+
+      remember('genres', genres ?? []);
+      remember('tags', tags ?? []);
+
+      setState((s) => ({ ...s, step: 'done', coverWarning }));
     } catch (error) {
       setState((s) => ({
         ...s,
@@ -186,9 +233,15 @@ export function AddQdnFlow({
     state.description,
     state.genres,
     state.tags,
+    state.coverFile,
+    state.coverData64,
     state.durationMs,
     ownerAddress,
+    publisherName,
     createTrack,
+    genreSuggestions,
+    tagSuggestions,
+    remember,
   ]);
 
   return (
@@ -329,23 +382,43 @@ export function AddQdnFlow({
           </label>
 
           <label className="form-field">
-            Genres (comma-separated)
-            <input
-              type="text"
+            Genres
+            <TaxonomyInput
+              kind="genres"
               value={state.genres}
-              onChange={(e) => setState((s) => ({ ...s, genres: e.target.value }))}
+              onChange={(value) => setState((s) => ({ ...s, genres: value }))}
               placeholder="Rock, Electronic"
             />
           </label>
 
           <label className="form-field">
-            Tags (comma-separated)
-            <input
-              type="text"
+            Tags
+            <TaxonomyInput
+              kind="tags"
               value={state.tags}
-              onChange={(e) => setState((s) => ({ ...s, tags: e.target.value }))}
+              onChange={(value) => setState((s) => ({ ...s, tags: value }))}
+              placeholder="chill, upbeat, instrumental"
             />
           </label>
+
+          <div className="form-field">
+            <label>Cover Image (optional, max 2 MB)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleCoverSelected(file);
+              }}
+            />
+            {state.coverData64 ? (
+              <img
+                src={state.coverFile ? URL.createObjectURL(state.coverFile) : ''}
+                alt="Cover preview"
+                className="upload-flow__cover-preview"
+              />
+            ) : null}
+          </div>
 
           <div className="form-actions">
             <button
@@ -374,6 +447,7 @@ export function AddQdnFlow({
       {state.step === 'done' && (
         <div className="upload-flow__done">
           <p className="upload-flow__success">✅ Track added to library!</p>
+          {state.coverWarning ? <p className="upload-flow__partial">{state.coverWarning}</p> : null}
           <div className="form-actions">
             <button className="button button--primary" type="button" onClick={onComplete}>
               Done

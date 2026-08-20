@@ -11,7 +11,12 @@ import type { AuthState } from '../../qortium/auth';
 
 export type AuthContextValue = {
   auth: AuthState;
-  /** The authenticated account's registered Qortium name, if any. Used as the QDN publisher name. */
+  /**
+   * The authenticated account's registered Qortium name (primary name), if
+   * any. This is the acting listener/owner identity, not the canonical
+   * NodeFM station publisher. Station-owned writes derive their publisher
+   * from the Station config instead.
+   */
   ownerName: string | null;
   refresh: () => void;
 };

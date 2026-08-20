@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { DynamicProgramDefinition, DynamicProgramOccurrence } from '../../../types/domain';
-import { useAuth } from '../../../app/providers/authContext';
+import { useStationIdentity } from '../../station';
 import {
   createRequestShowDefinitionAction,
   getRequestShowDefinitions,
@@ -39,8 +39,7 @@ export type UseRequestShowResult = {
 };
 
 export function useRequestShow(): UseRequestShowResult {
-  const { auth, ownerName } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress, publisherName } = useStationIdentity();
 
   const [definitions, setDefinitions] = useState(getRequestShowDefinitions());
   const [occurrences, setOccurrences] = useState(getRequestShowOccurrences());
@@ -61,7 +60,7 @@ export function useRequestShow(): UseRequestShowResult {
   }, []);
 
   useEffect(() => {
-    const action = getRequestShowLoadAction(ownerName, ownerAddress);
+    const action = getRequestShowLoadAction(publisherName, ownerAddress);
 
     if (action === 'clear') {
       resetRequestShowStore();
@@ -82,19 +81,19 @@ export function useRequestShow(): UseRequestShowResult {
       return;
     }
 
-    if (ownerName && ownerAddress) {
+    if (publisherName && ownerAddress) {
       resetRequestShowStore();
       setDefinitions([]);
       setOccurrences([]);
       setLoaded(false);
       setLoading(true);
       setError(null);
-      void loadRequestShowStore(ownerName, ownerAddress);
+      void loadRequestShowStore(publisherName, ownerAddress);
     }
-  }, [ownerAddress, ownerName]);
+  }, [ownerAddress, publisherName]);
 
   const refresh = useCallback(async () => {
-    if (!ownerName || !ownerAddress) {
+    if (!publisherName || !ownerAddress) {
       return;
     }
 
@@ -104,14 +103,14 @@ export function useRequestShow(): UseRequestShowResult {
     setLoaded(false);
     setLoading(true);
     setError(null);
-    await loadRequestShowStore(ownerName, ownerAddress);
-  }, [ownerAddress, ownerName]);
+    await loadRequestShowStore(publisherName, ownerAddress);
+  }, [ownerAddress, publisherName]);
 
   const throwIfNoName = useCallback(() => {
-    if (!ownerName) {
+    if (!publisherName) {
       throw new Error('A registered Qortium name is required.');
     }
-  }, [ownerName]);
+  }, [publisherName]);
 
   return {
     definitions,
@@ -121,11 +120,11 @@ export function useRequestShow(): UseRequestShowResult {
     error,
     createDefinition: async (input) => {
       throwIfNoName();
-      return createRequestShowDefinitionAction(input, ownerName!);
+      return createRequestShowDefinitionAction(input, publisherName!);
     },
     updateDefinition: async (programDefinitionId, input) => {
       throwIfNoName();
-      return updateRequestShowDefinitionAction(programDefinitionId, input, ownerName!);
+      return updateRequestShowDefinitionAction(programDefinitionId, input, publisherName!);
     },
     refresh,
   };

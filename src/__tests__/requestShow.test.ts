@@ -251,6 +251,7 @@ describe('Request Show occurrence serialization and timeline', () => {
       schemaVersion: 1,
       stationId: 'station-1',
       name: 'NodeFM',
+      publisherName: 'NodeFM',
       ownerAddress: 'owner',
       ownerName: 'Owner',
       timezone: 'Europe/Helsinki',

@@ -316,6 +316,85 @@ Do not hardcode the station owner's name/address inside generic UI components.
 
 Use recipient-based abstractions.
 
+## 11b. Listener track submissions
+
+A listener submission is a public, immutable listener-owned proposal. It is
+not a Station Track and does not enter the station Library until the station
+owner accepts it.
+
+```ts
+type ListenerTrackSubmission = {
+  schemaVersion: number;
+
+  submissionId: string;
+  submitterName: string;
+  submitterAddress: string;
+
+  title: string;
+  artist?: string;
+  description?: string;
+
+  audio: QdnResourceRef;
+  cover?: QdnResourceRef;
+
+  durationMs: number;
+
+  genres?: string[];
+  tags?: string[];
+
+  submittedAt: string;
+};
+```
+
+Rules:
+
+- QDN service is `JSON`; publisher name is the listener's registered Qortium
+  name; identifier is `nodefm-track-submission-<submissionId>`.
+- AUDIO is published by the listener with identifier
+  `nodefm-submission-audio-<submissionId>`.
+- Optional cover is published by the listener with identifier
+  `nodefm-submission-cover-<submissionId>`.
+- Duration is finite, positive, and trusted. Submission metadata is never
+  published before a valid duration is resolved.
+- The submission is immutable source material. It never stores PENDING,
+  ACCEPTED, or REJECTED.
+
+### Submission moderation
+
+Owner moderation is a separate station-authoritative resource under the
+canonical station publisher name:
+
+```ts
+type SubmissionModeration = {
+  schemaVersion: number;
+
+  moderationId: string;
+  submissionId: string;
+  submissionRef: QdnResourceRef;
+
+  decision: 'accepted' | 'rejected';
+  acceptedTrackId?: string;
+  reason?: string;
+
+  moderatorAddress: string;
+  moderatedAt: string;
+};
+```
+
+Rules:
+
+- Moderation QDN identifier is `nodefm-submission-mod-<submissionId>`.
+- Only the station owner may publish or update moderation.
+- `acceptedTrackId` is required for accepted submissions and is derived
+  deterministically from the submission ID so repeated acceptance is
+  idempotent.
+- Accepting a submission creates a normal Station Track. That track keeps the
+  listener-owned AUDIO reference and stores optional `submissionId` and
+  `submissionRef` lineage. The station owner does not re-publish or delete the
+  listener's AUDIO or Submission metadata.
+- Rejected submissions remain distinct from pending, accepted, malformed, and
+  unavailable resources.
+
 ## 12. Identifier policy
 
 Before implementation, define and document:
@@ -353,6 +432,10 @@ these working QDN identifiers:
 - `nodefm-playlist-version-<versionId>`
 - `nodefm-schedule-<eventId>`
 - `nodefm-schedule-recurrence-<recurrenceId>`
+- `nodefm-track-submission-<submissionId>`
+- `nodefm-submission-audio-<submissionId>`
+- `nodefm-submission-cover-<submissionId>`
+- `nodefm-submission-mod-<submissionId>`
 
 ## 13. Recurring schedule authoring model
 

@@ -8,10 +8,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../components/Modal';
-import { useStation } from '../../station';
+import { useStation, useStationIdentity } from '../../station';
 import { usePlaylists } from '../../../hooks/usePlaylists';
 import { useLibrary } from '../../../hooks/useLibrary';
-import { useAuth } from '../../../app/providers/authContext';
 import { useLikes } from '../../likes/useLikes';
 import { useRequestShow } from '../../dynamic-programs/request-show/useRequestShow';
 import { materializeRequestShowOccurrenceAction } from '../../dynamic-programs/request-show/requestShowStore';
@@ -82,9 +81,9 @@ export function ScheduleEventEditorModal({
   onClose,
 }: ScheduleEventEditorModalProps) {
   const { station } = useStation();
+  const { publisherName } = useStationIdentity();
   const { playlists, getVersions } = usePlaylists();
   const { createEvent, updateEvent, deleteEvent } = useScheduler();
-  const { ownerName } = useAuth();
   const { tracks: libraryTracks, loaded: libraryLoaded, loading: libraryLoading } = useLibrary();
   const { definitions, loaded: requestShowLoaded, loading: requestShowLoading } = useRequestShow();
   const timeZone = station?.timezone ?? '';
@@ -212,7 +211,7 @@ export function ScheduleEventEditorModal({
           throw new Error('Selected Request Show definition is no longer available.');
         }
 
-        if (!ownerName) {
+        if (!publisherName) {
           throw new Error('A registered Qortium name is required to materialize Request Show.');
         }
 
@@ -235,7 +234,7 @@ export function ScheduleEventEditorModal({
             eligibleTracks,
             rankFromAggregates(eligibleTracks, aggregates),
             new Date().toISOString(),
-            ownerName,
+            publisherName,
             { reuseExisting: mode === 'create' },
           );
         } catch (materializeError) {

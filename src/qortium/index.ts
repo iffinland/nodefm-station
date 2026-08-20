@@ -36,6 +36,7 @@ export type {
 // ── Phase 2 QDN operations ────────────────────────────────────────
 export {
   publishResource,
+  publishMultipleResources,
   selectPublishSource,
   searchQdnResources,
   listQdnResources,
@@ -50,6 +51,8 @@ export {
 export type {
   PublishInput,
   PublishResult,
+  MultiplePublishResult,
+  PublishMultipleResource,
   SelectPublishSourceResult,
   QdnSearchParams,
   QdnResourceInfo,
@@ -58,7 +61,15 @@ export type {
 } from './qdn';
 
 // ── Navigation / QDN addresses ─────────────────────────────────────
-export { getCurrentQdnAppIdentity, buildQdnUrl, openQdnAddress } from './navigation';
+export {
+  getCurrentQdnAppIdentity,
+  getCanonicalNodeFmAppIdentity,
+  buildQdnUrl,
+  openQdnAddress,
+  NODEFM_APP_SERVICE,
+  NODEFM_APP_NAME,
+  NODEFM_APP_IDENTIFIER,
+} from './navigation';
 export type { QdnHostGlobals, OpenTabTarget } from './navigation';
 
 // ── Social bridge write paths ─────────────────────────────────────

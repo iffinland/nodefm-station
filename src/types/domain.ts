@@ -24,6 +24,13 @@ export type Station = {
   name: string;
   description?: string;
 
+  /**
+   * The registered Qortium name under which station-owned QDN resources
+   * (station config, tracks, playlists, schedule, notices, etc.) are
+   * published. This is intentionally distinct from `ownerName` (a display
+   * label) and from the APP host identity (`APP / NodeFM / Radio-AutoDJ`).
+   */
+  publisherName: string;
   ownerName?: string;
   ownerAddress: string;
 
@@ -65,6 +72,15 @@ export type Track = {
   tags?: string[];
 
   source: TrackSource;
+
+  /**
+   * Optional lineage for tracks accepted from a listener submission.
+   * Kept optional so ordinary station uploads and QDN imports remain
+   * unchanged. The accepted Track itself is still a normal Station Track;
+   * these fields only preserve the source submission identity.
+   */
+  submissionId?: string;
+  submissionRef?: QdnResourceRef;
 
   createdAt: string;
   updatedAt: string;
@@ -264,4 +280,54 @@ export type StationNotice = {
 
   createdAt: string;
   updatedAt: string;
+};
+
+// ── Listener Track Submission ──────────────────────────────────────
+
+/**
+ * Immutable listener-owned source proposal for possible inclusion in the
+ * station library. The submission itself never mutates between PENDING,
+ * ACCEPTED, and REJECTED. Owner moderation is a separate station-owned
+ * resource.
+ */
+export type ListenerTrackSubmission = {
+  schemaVersion: number;
+
+  submissionId: string;
+  submitterName: string;
+  submitterAddress: string;
+
+  title: string;
+  artist?: string;
+  description?: string;
+
+  audio: QdnResourceRef;
+  cover?: QdnResourceRef;
+
+  durationMs: number;
+
+  genres?: string[];
+  tags?: string[];
+
+  submittedAt: string;
+};
+
+// ── Submission Moderation (station-owner authoritative) ────────────
+
+export type SubmissionModerationDecision = 'accepted' | 'rejected';
+
+export type SubmissionModeration = {
+  schemaVersion: number;
+
+  moderationId: string;
+  submissionId: string;
+  submissionRef: QdnResourceRef;
+
+  decision: SubmissionModerationDecision;
+  /** Required for accepted submissions and stored to make repeated Accept idempotent. */
+  acceptedTrackId?: string;
+  reason?: string;
+
+  moderatorAddress: string;
+  moderatedAt: string;
 };

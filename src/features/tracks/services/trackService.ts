@@ -11,9 +11,47 @@ import { isValidDurationMs, isScheduleEligibleDuration } from '../../../utils/du
 import { isRecord } from '../../../utils/record';
 import { isNonEmptyTrimmedString } from '../../../utils/validation';
 
+const MAX_TRACK_TAXONOMY_VALUES = 5;
+const MAX_TRACK_TAXONOMY_VALUE_LENGTH = 20;
+
+function normalizeTrackTaxonomyValues(
+  values: string[] | undefined,
+  label: string,
+): string[] | undefined {
+  if (values === undefined) return undefined;
+
+  if (!Array.isArray(values) || values.length > MAX_TRACK_TAXONOMY_VALUES) {
+    throw new Error(`${label} must contain at most ${MAX_TRACK_TAXONOMY_VALUES} values.`);
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const raw of values) {
+    if (!isNonEmptyTrimmedString(raw)) {
+      throw new Error(`${label} values must be non-empty strings.`);
+    }
+
+    const value = raw.trim().replace(/\s+/g, ' ');
+    if (value.length > MAX_TRACK_TAXONOMY_VALUE_LENGTH) {
+      throw new Error(
+        `${label} values must be at most ${MAX_TRACK_TAXONOMY_VALUE_LENGTH} characters.`,
+      );
+    }
+
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+
+  return normalized;
+}
+
 // ── Track Creation ──────────────────────────────────────────────────
 
 export type CreateTrackInput = {
+  trackId?: string;
   title: string;
   artist?: string;
   description?: string;
@@ -24,9 +62,23 @@ export type CreateTrackInput = {
   tags?: string[];
   source: TrackSource;
   ownerAddress: string;
+  submissionId?: string;
+  submissionRef?: QdnResourceRef;
 };
 
 export function createTrack(input: CreateTrackInput): Track {
+  if (input.trackId !== undefined && !isNonEmptyTrimmedString(input.trackId)) {
+    throw new Error('Track ID must be a non-empty string when provided.');
+  }
+
+  if (input.submissionId !== undefined && !isNonEmptyTrimmedString(input.submissionId)) {
+    throw new Error('Submission lineage ID must be a non-empty string when provided.');
+  }
+
+  if (input.submissionRef !== undefined && !isValidQdnResourceRef(input.submissionRef)) {
+    throw new Error('Submission lineage reference must be a valid QDN resource reference.');
+  }
+
   if (!isNonEmptyTrimmedString(input.title)) {
     throw new Error('Track title must be a non-empty string.');
   }
@@ -43,11 +95,14 @@ export function createTrack(input: CreateTrackInput): Track {
     throw new Error('Track cover must be a valid QDN resource reference.');
   }
 
+  const genres = normalizeTrackTaxonomyValues(input.genres, 'Track genres');
+  const tags = normalizeTrackTaxonomyValues(input.tags, 'Track tags');
+
   const now = new Date().toISOString();
 
   return {
     schemaVersion: 1,
-    trackId: generateId(),
+    trackId: input.trackId?.trim() || generateId(),
     ownerAddress: input.ownerAddress,
     title: input.title.trim(),
     artist: input.artist,
@@ -55,9 +110,11 @@ export function createTrack(input: CreateTrackInput): Track {
     audio: input.audio,
     cover: input.cover,
     durationMs: input.durationMs,
-    genres: input.genres,
-    tags: input.tags,
+    genres,
+    tags,
     source: input.source,
+    submissionId: input.submissionId,
+    submissionRef: input.submissionRef,
     createdAt: now,
     updatedAt: now,
   };
@@ -78,10 +135,15 @@ export function editTrack(track: Track, input: EditTrackInput): Track {
     throw new Error('Track cover must be a valid QDN resource reference.');
   }
 
+  const genres = normalizeTrackTaxonomyValues(input.genres, 'Track genres');
+  const tags = normalizeTrackTaxonomyValues(input.tags, 'Track tags');
+
   return {
     ...track,
     ...input,
     title: input.title !== undefined ? input.title.trim() : track.title,
+    genres: input.genres !== undefined ? genres : track.genres,
+    tags: input.tags !== undefined ? tags : track.tags,
     updatedAt: new Date().toISOString(),
   };
 }

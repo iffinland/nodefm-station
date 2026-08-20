@@ -48,6 +48,7 @@ function station(overrides: Partial<Station> = {}): Station {
     schemaVersion: 1,
     stationId: 'station-1',
     name: 'NodeFM Test',
+    publisherName: 'NodeFM',
     ownerAddress: 'owner-address',
     ownerName: 'Owner',
     timezone: 'Europe/Helsinki',

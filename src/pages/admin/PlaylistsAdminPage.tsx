@@ -11,12 +11,11 @@ import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { usePlaylists } from '../../hooks/usePlaylists';
-import { useAuth } from '../../app/providers/authContext';
+import { useStationIdentity } from '../../features/station';
 
 export default function PlaylistsAdminPage() {
   const { playlists, loaded, loading, error, createPlaylist, refresh } = usePlaylists();
-  const { auth } = useAuth();
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  const { ownerAddress } = useStationIdentity();
 
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');

@@ -58,14 +58,29 @@ export class AudioEngine {
       this.audio.preload = 'auto';
 
       this.audio.addEventListener('play', () => this.updatePlaybackState('playing'));
+      this.audio.addEventListener('playing', () => this.updatePlaybackState('playing'));
       this.audio.addEventListener('pause', () => {
         // Only set paused if not caused by a load/error
         if (this.state.playbackState !== 'error' && this.state.playbackState !== 'idle') {
           this.updatePlaybackState('paused');
         }
       });
-      this.audio.addEventListener('waiting', () => this.updatePlaybackState('buffering'));
-      this.audio.addEventListener('canplay', () => this.updatePlaybackState('ready'));
+      this.audio.addEventListener('waiting', () => {
+        // A media element can emit `waiting` immediately after `play()` while
+        // it is still fetching data. Do not downgrade an active `playing`
+        // state (or a user-visible `paused` state) to `buffering`.
+        if (this.state.playbackState !== 'playing' && this.state.playbackState !== 'paused') {
+          this.updatePlaybackState('buffering');
+        }
+      });
+      this.audio.addEventListener('canplay', () => {
+        // `canplay` can fire again after a seek while the media element is
+        // already playing. Do not downgrade `playing` (or `paused`) to
+        // `ready`; that would desync the UI from the actual media element.
+        if (this.state.playbackState !== 'playing' && this.state.playbackState !== 'paused') {
+          this.updatePlaybackState('ready');
+        }
+      });
       this.audio.addEventListener('loadedmetadata', () => this.applyPendingSeek());
       this.audio.addEventListener('canplay', () => this.applyPendingSeek());
       this.audio.addEventListener('timeupdate', () => {

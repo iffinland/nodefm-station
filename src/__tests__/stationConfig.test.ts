@@ -38,6 +38,7 @@ function stationPayload(overrides: Record<string, unknown> = {}) {
     schemaVersion: 1,
     stationId: 'station-1',
     name: 'NodeFM',
+    publisherName: 'Owner',
     ownerAddress: 'Q-owner',
     ownerName: 'Owner',
     timezone: 'Europe/Helsinki',
@@ -56,6 +57,7 @@ describe('station domain validation', () => {
   it('creates a valid station and trims display fields', () => {
     const station = createStation({
       name: '  NodeFM  ',
+      publisherName: 'Owner',
       ownerAddress: 'Q-owner',
       ownerName: 'Owner',
       timezone: ' Europe/Helsinki ',
@@ -72,10 +74,29 @@ describe('station domain validation', () => {
     expect(station.tipsEnabled).toBe(true);
   });
 
+  it('treats the owner display name as optional while requiring the publisher name', () => {
+    const station = createStation({
+      name: 'NodeFM',
+      publisherName: '  NodeFM  ',
+      ownerAddress: 'Q-owner',
+      timezone: 'Europe/Helsinki',
+      defaultRotationPlaylistId: 'playlist-1',
+      defaultRotationPlaylistVersionId: 'version-1',
+      stationEpochUtc: '2026-01-01T00:00:00.000Z',
+      messagingEnabled: false,
+      tipsEnabled: false,
+    });
+
+    expect(station.publisherName).toBe('NodeFM');
+    expect(station.ownerName).toBeUndefined();
+    expect(station.ownerAddress).toBe('Q-owner');
+  });
+
   it('rejects invalid required fields', () => {
     expect(() =>
       createStation({
         name: '',
+        publisherName: 'Owner',
         ownerAddress: 'Q-owner',
         ownerName: 'Owner',
         timezone: 'Europe/Helsinki',
@@ -90,6 +111,7 @@ describe('station domain validation', () => {
     expect(() =>
       createStation({
         name: 'NodeFM',
+        publisherName: 'Owner',
         ownerAddress: 'Q-owner',
         ownerName: 'Owner',
         timezone: 'Europe/Helsinki',
@@ -100,6 +122,20 @@ describe('station domain validation', () => {
         tipsEnabled: false,
       }),
     ).toThrow(/epoch/i);
+
+    expect(() =>
+      createStation({
+        name: 'NodeFM',
+        publisherName: '',
+        ownerAddress: 'Q-owner',
+        timezone: 'Europe/Helsinki',
+        defaultRotationPlaylistId: 'playlist-1',
+        defaultRotationPlaylistVersionId: 'version-1',
+        stationEpochUtc: '2026-01-01T00:00:00.000Z',
+        messagingEnabled: false,
+        tipsEnabled: false,
+      }),
+    ).toThrow(/publisher name/i);
   });
 
   it('rejects malformed station records during deserialization', () => {
@@ -108,12 +144,14 @@ describe('station domain validation', () => {
       deserializeStationFromQdn(stationPayload({ defaultRotationPlaylistVersionId: '' })),
     ).toBeNull();
     expect(deserializeStationFromQdn(stationPayload({ stationEpochUtc: 'not-a-date' }))).toBeNull();
+    expect(deserializeStationFromQdn(stationPayload({ publisherName: '' }))).toBeNull();
     expect(deserializeStationFromQdn(stationPayload())).toMatchObject({ stationId: 'station-1' });
   });
 
   it('rejects invalid edits', () => {
     const station = createStation({
       name: 'NodeFM',
+      publisherName: 'Owner',
       ownerAddress: 'Q-owner',
       ownerName: 'Owner',
       timezone: 'Europe/Helsinki',
@@ -158,7 +196,7 @@ describe('station QDN store', () => {
       .mockResolvedValueOnce(stationPayload());
     mockedSearch.mockResolvedValue([
       {
-        name: 'Owner',
+        name: 'NodeFM',
         service: 'JSON',
         identifier: getStationQdnIdentifier(),
       },
@@ -187,22 +225,22 @@ describe('station QDN store', () => {
     expect(getStationError()).toBeNull();
   });
 
-  it('fails explicitly when discovery is ambiguous', async () => {
+  it('ignores non-canonical station publishers during discovery', async () => {
     mockedSearch.mockResolvedValue([
-      { name: 'Owner-A', service: 'JSON', identifier: getStationQdnIdentifier() },
-      { name: 'Owner-B', service: 'JSON', identifier: getStationQdnIdentifier() },
+      { name: 'Learning DEV - iffi', service: 'JSON', identifier: getStationQdnIdentifier() },
     ]);
 
     await loadStationConfig(null);
 
-    expect(getStationLoaded()).toBe(false);
-    expect(getStationError()).toMatch(/ambiguous/i);
+    expect(getStationLoaded()).toBe(true);
+    expect(getStation()).toBeNull();
+    expect(getStationError()).toBeNull();
   });
 
   it('treats a discovered but malformed station record as a data error', async () => {
     mockedFetch.mockResolvedValue({ stationId: 'station-1', name: '' });
     mockedSearch.mockResolvedValue([
-      { name: 'Owner', service: 'JSON', identifier: getStationQdnIdentifier() },
+      { name: 'NodeFM', service: 'JSON', identifier: getStationQdnIdentifier() },
     ]);
 
     await loadStationConfig(null);
@@ -215,6 +253,7 @@ describe('station QDN store', () => {
     mockedPublish.mockResolvedValue({ accepted: true } as never);
     const station = createStation({
       name: 'NodeFM',
+      publisherName: 'Owner',
       ownerAddress: 'Q-owner',
       ownerName: 'Owner',
       timezone: 'Europe/Helsinki',

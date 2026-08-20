@@ -16,30 +16,46 @@ describe('canonical app share target', () => {
       buildAppShareTarget({
         _qdnService: 'APP',
         _qdnName: 'NodeFM',
-        _qdnIdentifier: 'NodeFM',
+        _qdnIdentifier: 'Radio-AutoDJ',
       }),
-    ).toBe('qdn://APP/NodeFM/NodeFM');
+    ).toBe('qdn://APP/NodeFM/Radio-AutoDJ');
   });
 
-  it('returns null rather than inventing an app identity', () => {
-    expect(buildAppShareTarget({})).toBeNull();
+  it('falls back to the canonical NodeFM APP identity when host globals are absent', () => {
+    expect(buildAppShareTarget({})).toBe('qdn://APP/NodeFM/Radio-AutoDJ');
   });
 });
 
 describe('canonical playlist share target', () => {
-  it('uses the published playlist QDN identifier', () => {
-    expect(buildPlaylistShareTarget('Learning DEV - iffi', 'playlist-1')).toBe(
-      'qdn://PLAYLIST/Learning%20DEV%20-%20iffi/nodefm-playlist-playlist-1',
+  it('produces a NodeFM APP playlist route, not a raw PLAYLIST viewer URL', () => {
+    expect(buildPlaylistShareTarget('playlist-1')).toBe(
+      'qdn://APP/NodeFM/Radio-AutoDJ/playlists/playlist-1',
+    );
+  });
+
+  it('encodes spaces and special characters in the playlist route segment', () => {
+    expect(buildPlaylistShareTarget('playlist / 1')).toBe(
+      'qdn://APP/NodeFM/Radio-AutoDJ/playlists/playlist%20%2F%201',
     );
   });
 
   it('builds typed share targets', () => {
+    expect(buildShareTarget({ kind: 'app' }, {})).toBe('qdn://APP/NodeFM/Radio-AutoDJ');
+
     expect(
       buildShareTarget(
-        { kind: 'playlist', publisherName: 'station', playlistId: 'p1' },
-        { _qdnService: 'APP', _qdnName: 'NodeFM', _qdnIdentifier: 'NodeFM' },
+        { kind: 'playlist', playlistId: 'p1' },
+        { _qdnService: 'APP', _qdnName: 'NodeFM', _qdnIdentifier: 'Radio-AutoDJ' },
       ),
-    ).toBe('qdn://PLAYLIST/station/nodefm-playlist-p1');
+    ).toBe('qdn://APP/NodeFM/Radio-AutoDJ/playlists/p1');
+  });
+
+  it('never emits the obsolete Learning DEV - iffi identity', () => {
+    const app = buildAppShareTarget({});
+    const playlist = buildPlaylistShareTarget('p1', {});
+
+    expect(app).not.toContain('Learning DEV - iffi');
+    expect(playlist).not.toContain('Learning DEV - iffi');
   });
 });
 
