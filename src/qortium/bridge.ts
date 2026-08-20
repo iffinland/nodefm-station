@@ -246,7 +246,7 @@ function toBridgeError(
   return new QortiumBridgeError('BRIDGE_UNAVAILABLE', 'Qortium Home bridge is not available.');
 }
 
-function parseRequestError(response: unknown): string | null {
+function parseRequestError(response: unknown, action: string): string | null {
   if (response === null || response === undefined) {
     return 'Qortium request returned an empty response.';
   }
@@ -273,12 +273,20 @@ function parseRequestError(response: unknown): string | null {
     return response.error;
   }
 
-  if (typeof response.message === 'string' && response.message.trim()) {
-    return response.message;
-  }
-
   if (response.error === true || response.success === false) {
     return 'Qortium request failed.';
+  }
+
+  // A successful FETCH_QDN_RESOURCE payload is domain data. A valid
+  // StationNotice (and other future JSON records) can legitimately have a
+  // top-level `message` field, so do not interpret that field as a transport
+  // error on this read action. Explicit error/success flags above still win.
+  if (
+    action !== 'FETCH_QDN_RESOURCE' &&
+    typeof response.message === 'string' &&
+    response.message.trim()
+  ) {
+    return response.message;
   }
 
   return null;
@@ -326,7 +334,7 @@ export async function sendBridgeRequest<T = unknown>(request: Record<string, unk
 
     try {
       const response = await Promise.race([baseRequestPromise, timeoutPromise]);
-      const requestError = parseRequestError(response);
+      const requestError = parseRequestError(response, action);
 
       if (requestError) {
         throw new Error(requestError);

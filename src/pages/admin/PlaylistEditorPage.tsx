@@ -17,7 +17,8 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useLibrary } from '../../hooks/useLibrary';
-import { useStationIdentity } from '../../features/station';
+import { useStation, useStationIdentity } from '../../features/station';
+import { useScheduler } from '../../features/scheduling';
 import { formatDurationMs, calculateTotalDurationMs } from '../../utils/duration';
 import {
   isPlaylistPublishable,
@@ -29,6 +30,7 @@ import {
   clearPlaylistDraft,
   type PlaylistDraftTrack,
 } from '../../features/playlists/services/playlistDraftStore';
+import { findPlaylistVersionReferences } from '../../features/playlists/services/playlistVersionReferenceService';
 import type { Track, PlaylistVersionTrack } from '../../types/domain';
 import type { EditPlaylistInput } from '../../features/playlists/services/playlistService';
 
@@ -36,23 +38,37 @@ export default function PlaylistEditorPage() {
   const { playlistId } = useParams<{ playlistId: string }>();
   const navigate = useNavigate();
   const { ownerAddress } = useStationIdentity();
+  const { station } = useStation();
+  const {
+    events: scheduleEvents,
+    recurrences: scheduleRecurrences,
+    loaded: scheduleLoaded,
+  } = useScheduler();
 
   const {
     loaded: plLoaded,
     loading: plLoading,
     error: plError,
+    revision: playlistStoreRevision,
     getPlaylist,
     getVersions,
     getLatestVersion,
     editPlaylist,
     duplicatePlaylist,
     publishVersion,
+    deleteVersion,
+    restoreVersionAsLatest,
     refresh: refreshPlaylists,
   } = usePlaylists();
   const { tracks: libraryTracks, loaded: libLoaded } = useLibrary();
 
   const playlist = playlistId ? getPlaylist(playlistId) : undefined;
-  const versions = playlistId ? getVersions(playlistId) : [];
+  // `playlistStoreRevision` is a deliberate cache-buster for the store's
+  // version list; the hook already returns a stable `getVersions` function.
+  const versions = useMemo(
+    () => (playlistId ? getVersions(playlistId) : []),
+    [getVersions, playlistId, playlistStoreRevision], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const latestVersion = playlistId ? getLatestVersion(playlistId) : undefined;
 
   const [draftTracks, setDraftTracks] = useState<PlaylistDraftTrack[]>([]);
@@ -66,6 +82,8 @@ export default function PlaylistEditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<string | null>(null);
+  const [versionActionBusy, setVersionActionBusy] = useState<string | null>(null);
+  const [versionActionResult, setVersionActionResult] = useState<string | null>(null);
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
@@ -77,6 +95,8 @@ export default function PlaylistEditorPage() {
     setEditingMeta(false);
     setError(null);
     setPublishResult(null);
+    setVersionActionBusy(null);
+    setVersionActionResult(null);
     setShowAddTracks(false);
     setDragIndex(null);
   }, [ownerAddress, playlistId]);
@@ -139,6 +159,27 @@ export default function PlaylistEditorPage() {
       ),
     [draftTracks],
   );
+
+  const versionReferences = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof findPlaylistVersionReferences>>();
+
+    if (!playlist) return map;
+
+    for (const version of versions) {
+      map.set(
+        version.versionId,
+        findPlaylistVersionReferences({
+          versionId: version.versionId,
+          playlists: [playlist],
+          scheduleEvents,
+          scheduleRecurrences,
+          station,
+        }),
+      );
+    }
+
+    return map;
+  }, [playlist, scheduleEvents, scheduleRecurrences, station, versions]);
 
   const handleSaveMeta = useCallback(async () => {
     if (!playlist) return;
@@ -240,6 +281,46 @@ export default function PlaylistEditorPage() {
       setError(err instanceof Error ? err.message : 'Failed to duplicate.');
     }
   }, [playlist, duplicatePlaylist]);
+
+  const handleDeleteVersion = useCallback(
+    async (versionId: string) => {
+      if (!playlist || versionActionBusy) return;
+
+      setVersionActionBusy(`delete:${versionId}`);
+      setVersionActionResult(null);
+      setError(null);
+
+      try {
+        await deleteVersion(versionId);
+        setVersionActionResult('Version deleted successfully.');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete playlist version.');
+      } finally {
+        setVersionActionBusy(null);
+      }
+    },
+    [deleteVersion, playlist, versionActionBusy],
+  );
+
+  const handleRestoreVersion = useCallback(
+    async (versionId: string) => {
+      if (!playlist || versionActionBusy) return;
+
+      setVersionActionBusy(`restore:${versionId}`);
+      setVersionActionResult(null);
+      setError(null);
+
+      try {
+        await restoreVersionAsLatest(playlist.playlistId, versionId);
+        setVersionActionResult('Version restored as latest.');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to restore playlist version.');
+      } finally {
+        setVersionActionBusy(null);
+      }
+    },
+    [playlist, restoreVersionAsLatest, versionActionBusy],
+  );
 
   if (plLoading || !draftInitialized) {
     return (
@@ -464,20 +545,79 @@ export default function PlaylistEditorPage() {
         {versions.length > 0 && (
           <div className="playlist-editor__versions">
             <h3>Published Versions</h3>
+            {versionActionResult && <p className="form-success">{versionActionResult}</p>}
             <div className="playlist-editor__version-list">
-              {[...versions].reverse().map((v) => (
-                <div
-                  key={v.versionId}
-                  className={`playlist-editor__version-item ${v.versionId === latestVersion?.versionId ? 'playlist-editor__version-item--latest' : ''}`}
-                >
-                  <span>
-                    <strong>v{v.versionNumber}</strong>
-                  </span>
-                  <span>{v.tracks.length} tracks</span>
-                  <span>{formatDurationMs(v.totalDurationMs)}</span>
-                  <span>{new Date(v.createdAt).toLocaleDateString()}</span>
-                </div>
-              ))}
+              {[...versions].reverse().map((v) => {
+                const isLatest = v.versionId === playlist.latestVersionId;
+                const isDefault = station?.defaultRotationPlaylistVersionId === v.versionId;
+                const references = versionReferences.get(v.versionId) ?? [];
+                const hasBlockingReference = references.length > 0 || isLatest || isDefault;
+                const canDelete = !isLatest && !hasBlockingReference && scheduleLoaded;
+                const busyKey = versionActionBusy;
+
+                return (
+                  <div
+                    key={v.versionId}
+                    className={`playlist-editor__version-item ${isLatest ? 'playlist-editor__version-item--latest' : ''}`}
+                  >
+                    <div className="playlist-editor__version-item__main">
+                      <span>
+                        <strong>v{v.versionNumber}</strong>
+                        {isLatest && (
+                          <span className="playlist-editor__version-badge">CURRENT</span>
+                        )}
+                        {isDefault && (
+                          <span className="playlist-editor__version-badge">DEFAULT ROTATION</span>
+                        )}
+                      </span>
+                      <span>{v.tracks.length} tracks</span>
+                      <span>{formatDurationMs(v.totalDurationMs)}</span>
+                      <span>{new Date(v.createdAt).toLocaleString()}</span>
+                      <span>
+                        {references.length > 0
+                          ? `Referenced by ${references
+                              .map((reference) => reference.label || reference.id)
+                              .join(', ')}`
+                          : scheduleLoaded
+                            ? 'Not referenced elsewhere'
+                            : 'Checking schedule references…'}
+                      </span>
+                    </div>
+
+                    <div className="playlist-editor__version-item__actions">
+                      {!isLatest && (
+                        <button
+                          className="button button--secondary"
+                          type="button"
+                          onClick={() => handleRestoreVersion(v.versionId)}
+                          disabled={versionActionBusy !== null}
+                        >
+                          Make Latest
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          className="button button--secondary playlist-editor__delete-btn"
+                          type="button"
+                          onClick={() => handleDeleteVersion(v.versionId)}
+                          disabled={versionActionBusy !== null}
+                        >
+                          Delete
+                        </button>
+                      )}
+                      {isLatest && <span className="playlist-editor__version-locked">Latest</span>}
+                      {!canDelete && !isLatest && hasBlockingReference && (
+                        <span className="playlist-editor__version-locked">Delete blocked</span>
+                      )}
+                      {!canDelete && !isLatest && !hasBlockingReference && !scheduleLoaded && (
+                        <span className="playlist-editor__version-locked">Delete unavailable</span>
+                      )}
+                      {busyKey === `delete:${v.versionId}` && <span>Deleting…</span>}
+                      {busyKey === `restore:${v.versionId}` && <span>Restoring…</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

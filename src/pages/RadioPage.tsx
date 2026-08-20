@@ -63,120 +63,143 @@ export default function RadioPage() {
     <PageShell title={station?.name ?? 'NodeFM Radio'}>
       <div className="radio-page">
         {/* Now Playing Section */}
-        <section className="radio-page__now-playing">
-          <div className="now-playing__cover">
-            {playerState.currentTrack?.coverUrl ? (
-              <img
-                className="now-playing__cover-image"
-                src={playerState.currentTrack.coverUrl}
-                alt=""
-              />
-            ) : (
-              <div className="now-playing__cover-placeholder" aria-hidden="true">
-                ♫
+        <section className="radio-page__hero" aria-label="Now playing">
+          <div className="radio-page__hero-signal" aria-hidden="true" />
+          <div className="radio-page__now-playing">
+            <div className="now-playing__cover">
+              {playerState.currentTrack?.coverUrl ? (
+                <img
+                  className="now-playing__cover-image"
+                  src={playerState.currentTrack.coverUrl}
+                  alt=""
+                />
+              ) : (
+                <div className="now-playing__cover-placeholder" aria-hidden="true">
+                  <span className="signal-cover__core signal-cover__core--lg" />
+                </div>
+              )}
+            </div>
+            <div className="now-playing__info">
+              <div className="now-playing__status-row">
+                <span
+                  className={`now-playing__live-badge${
+                    liveState?.mode === 'scheduled' ? ' now-playing__live-badge--scheduled' : ''
+                  }`}
+                >
+                  {liveState?.mode === 'scheduled' ? 'SCHEDULED' : 'AutoDJ-LIVE'}
+                </span>
               </div>
-            )}
+              <h2 className="now-playing__title">{currentTrack?.title ?? '—'}</h2>
+              <p className="now-playing__artist">
+                {currentTrack?.artist ?? (stationLoading ? 'Loading station…' : 'No track playing')}
+              </p>
+              {liveState?.programTitle && (
+                <p className="now-playing__program">{liveState.programTitle}</p>
+              )}
+              {currentTrack && (
+                <p className="now-playing__track-time">
+                  {formatDurationMs(currentTrack.durationMs)} track duration
+                </p>
+              )}
+              {currentTrack && (
+                <div className="now-playing__like">
+                  <button
+                    className={`button ${
+                      isLiked(currentTrack.trackId) ? 'button--liked' : 'button--like'
+                    }`}
+                    type="button"
+                    onClick={handleLike}
+                    aria-pressed={isLiked(currentTrack.trackId)}
+                    disabled={likesLoading}
+                  >
+                    <span className="now-playing__like-icon" aria-hidden="true">
+                      {isLiked(currentTrack.trackId) ? '♥' : '♡'}
+                    </span>
+                    <span>{isLiked(currentTrack.trackId) ? 'Liked' : 'Like'}</span>
+                    <span className="now-playing__like-count">
+                      {getLikeCount(currentTrack.trackId)}
+                    </span>
+                  </button>
+                  {likeError && <p className="now-playing__error">{likeError}</p>}
+                  {likesLoadError && (
+                    <p className="now-playing__error">Like data unavailable: {likesLoadError}</p>
+                  )}
+                  {likesIncomplete && (
+                    <p className="now-playing__error">
+                      Like data is incomplete and may not reflect all Likes.
+                    </p>
+                  )}
+                </div>
+              )}
+              {station && (
+                <div className="now-playing__social-actions">
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => setMessageOpen(true)}
+                    title={station.messagingEnabled ? undefined : 'Station messaging is disabled.'}
+                  >
+                    Message Owner
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => setTipOpen(true)}
+                    title={station.tipsEnabled ? undefined : 'Station tips/donations are disabled.'}
+                  >
+                    Tip Owner
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => setShareOpen(true)}
+                  >
+                    Share
+                  </button>
+                </div>
+              )}
+              {playbackError && (
+                <p className="now-playing__error">
+                  {playbackError}{' '}
+                  <button className="button button--secondary" type="button" onClick={retry}>
+                    Retry
+                  </button>
+                </p>
+              )}
+              {timeline.stationError && (
+                <p className="now-playing__error">
+                  {timeline.stationError}{' '}
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={refreshStation}
+                  >
+                    Retry
+                  </button>
+                </p>
+              )}
+              {timeline.dataError && (
+                <p className="now-playing__error">
+                  {timeline.dataError}{' '}
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={timeline.refreshData}
+                  >
+                    Retry
+                  </button>
+                </p>
+              )}
+              {hasNoStation && (
+                <p className="radio-page__placeholder">No station program is configured yet.</p>
+              )}
+            </div>
           </div>
-          <div className="now-playing__info">
-            <h2 className="now-playing__title">{currentTrack?.title ?? '—'}</h2>
-            <p className="now-playing__artist">
-              {currentTrack?.artist ?? (stationLoading ? 'Loading station…' : 'No track playing')}
-            </p>
-            {liveState?.programTitle && (
-              <p className="now-playing__program">{liveState.programTitle}</p>
-            )}
-            <span className="now-playing__live-badge">
-              {liveState?.mode === 'scheduled' ? 'SCHEDULED' : 'LIVE'}
-            </span>
-            {currentTrack && (
-              <p className="now-playing__track-time">
-                {formatDurationMs(currentTrack.durationMs)} track duration
-              </p>
-            )}
-            {currentTrack && (
-              <div className="now-playing__like">
-                <button
-                  className={`button ${isLiked(currentTrack.trackId) ? 'button--primary' : 'button--secondary'}`}
-                  type="button"
-                  onClick={handleLike}
-                  disabled={likesLoading}
-                >
-                  {isLiked(currentTrack.trackId) ? 'Liked' : 'Like'} ·{' '}
-                  {getLikeCount(currentTrack.trackId)}
-                </button>
-                {likeError && <p className="now-playing__error">{likeError}</p>}
-                {likesLoadError && (
-                  <p className="now-playing__error">Like data unavailable: {likesLoadError}</p>
-                )}
-                {likesIncomplete && (
-                  <p className="now-playing__error">
-                    Like data is incomplete and may not reflect all Likes.
-                  </p>
-                )}
-              </div>
-            )}
-            {station && (
-              <div className="now-playing__social-actions">
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => setMessageOpen(true)}
-                  title={station.messagingEnabled ? undefined : 'Station messaging is disabled.'}
-                >
-                  Message Owner
-                </button>
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => setTipOpen(true)}
-                  title={station.tipsEnabled ? undefined : 'Station tips/donations are disabled.'}
-                >
-                  Tip Owner
-                </button>
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => setShareOpen(true)}
-                >
-                  Share
-                </button>
-              </div>
-            )}
-            {playbackError && (
-              <p className="now-playing__error">
-                {playbackError}{' '}
-                <button className="button button--secondary" type="button" onClick={retry}>
-                  Retry
-                </button>
-              </p>
-            )}
-            {timeline.stationError && (
-              <p className="now-playing__error">
-                {timeline.stationError}{' '}
-                <button className="button button--secondary" type="button" onClick={refreshStation}>
-                  Retry
-                </button>
-              </p>
-            )}
-            {timeline.dataError && (
-              <p className="now-playing__error">
-                {timeline.dataError}{' '}
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={timeline.refreshData}
-                >
-                  Retry
-                </button>
-              </p>
-            )}
-            {hasNoStation && (
-              <p className="radio-page__placeholder">No station program is configured yet.</p>
-            )}
+
+          <div className="radio-page__notices">
+            <StationNotices nowUtcMs={timeline.nowUtcMs} />
           </div>
         </section>
-
-        <StationNotices nowUtcMs={timeline.nowUtcMs} />
 
         {/* Upcoming Section */}
         <section className="radio-page__upcoming">
@@ -207,7 +230,7 @@ export default function RadioPage() {
 
         {/* Schedule Section */}
         <section className="radio-page__schedule">
-          <h3>Today's Schedule</h3>
+          <h3>Upcoming Schedule</h3>
           {timeline.scheduleEvents.length === 0 ? (
             <p className="radio-page__placeholder">No scheduled programs available.</p>
           ) : (

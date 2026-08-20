@@ -164,7 +164,7 @@ export default function PlaylistDetailPage() {
             <img className="playlist-detail__cover" src={coverUrl} alt="" />
           ) : (
             <div className="playlist-detail__cover-placeholder" aria-hidden="true">
-              ♫
+              <span className="signal-cover__core signal-cover__core--lg" />
             </div>
           )}
           <div className="playlist-detail__info">
@@ -260,7 +260,14 @@ export default function PlaylistDetailPage() {
           <h3>Tracks</h3>
           <ol className="playlist-detail__track-list">
             {tracks.map((entry, index) => (
-              <li key={`${entry.track.trackId}-${index}`} className="playlist-detail__track">
+              <li
+                key={`${entry.track.trackId}-${index}`}
+                className={`playlist-detail__track${
+                  entry.track.trackId === currentTrack?.trackId
+                    ? ' playlist-detail__track--playing'
+                    : ''
+                }`}
+              >
                 <span className="playlist-detail__track-index">{index + 1}</span>
                 <span className="playlist-detail__track-title">
                   {entry.track.title}

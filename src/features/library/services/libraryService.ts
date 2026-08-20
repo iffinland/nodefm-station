@@ -24,6 +24,10 @@ import {
   createTrack,
   editTrack,
 } from '../../tracks/services/trackService';
+import {
+  getQdnResourceReadErrorCode,
+  isConfirmedQdnNotFoundError,
+} from '../../../qortium/qdnReadError';
 
 // ── In-Memory Store ─────────────────────────────────────────────────
 
@@ -31,10 +35,25 @@ let libraryTracks: Track[] = [];
 let libraryLoaded = false;
 let libraryLoading = false;
 let libraryError: string | null = null;
+let libraryIncomplete = false;
+let libraryDiagnostics: LibraryDiagnostic[] = [];
 let libraryEpoch = 0;
 let libraryActiveScope: string | null = null;
 type LibraryListener = () => void;
 const listeners = new Set<LibraryListener>();
+
+export type LibraryDiagnosticCode =
+  | 'INVALID_METADATA'
+  | 'MALFORMED_RESOURCE'
+  | 'RESOURCE_UNAVAILABLE'
+  | 'RESOURCE_NOT_FOUND'
+  | 'IDENTITY_MISMATCH';
+
+export type LibraryDiagnostic = {
+  identifier: string;
+  code: LibraryDiagnosticCode;
+  detail: string;
+};
 
 function notifyListeners() {
   listeners.forEach((fn) => fn());
@@ -64,18 +83,20 @@ async function persistTrack(track: Track, ownerName: string): Promise<void> {
   });
 }
 
-async function fetchTrackFromQdn(ownerName: string, trackId: string): Promise<Track | null> {
-  try {
-    const payload = await fetchQdnResourceData({
-      service: TRACK_SERVICE,
-      name: ownerName,
-      identifier: getTrackQdnIdentifier(trackId),
-    });
+async function fetchTrackFromQdn(ownerName: string, trackId: string): Promise<Track> {
+  const payload = await fetchQdnResourceData({
+    service: TRACK_SERVICE,
+    name: ownerName,
+    identifier: getTrackQdnIdentifier(trackId),
+  });
 
-    return deserializeTrackFromQdn(payload);
-  } catch {
-    return null;
+  const track = deserializeTrackFromQdn(payload);
+
+  if (!track) {
+    throw new Error(`Malformed station track resource: ${getTrackQdnIdentifier(trackId)}`);
   }
+
+  return track;
 }
 
 // ── Public API ──────────────────────────────────────────────────────
@@ -101,6 +122,14 @@ export function getLibraryLoading(): boolean {
 
 export function getLibraryError(): string | null {
   return libraryError;
+}
+
+export function getLibraryIncomplete(): boolean {
+  return libraryIncomplete;
+}
+
+export function getLibraryDiagnostics(): LibraryDiagnostic[] {
+  return [...libraryDiagnostics];
 }
 
 export function getLibraryActiveScope(): string | null {
@@ -161,23 +190,49 @@ export async function loadLibrary(ownerName: string, ownerAddress: string): Prom
     });
 
     const tracks: Track[] = [];
+    const diagnostics: LibraryDiagnostic[] = [];
     const seenTrackIdentifiers = new Set<string>();
+    let incomplete = false;
 
     for (const result of results) {
       if (!result.identifier || !result.identifier.startsWith(TRACK_IDENTIFIER_PREFIX)) continue;
       if (seenTrackIdentifiers.has(result.identifier)) continue;
 
+      const identifier = result.identifier;
+      const trackId = identifier.slice(TRACK_IDENTIFIER_PREFIX.length);
+
       try {
-        const track = await fetchTrackFromQdn(
-          ownerName,
-          result.identifier.slice(TRACK_IDENTIFIER_PREFIX.length),
-        );
-        if (track && track.ownerAddress === ownerAddress) {
-          seenTrackIdentifiers.add(result.identifier);
-          tracks.push(track);
+        const track = await fetchTrackFromQdn(ownerName, trackId);
+
+        if (track.ownerAddress !== ownerAddress) {
+          diagnostics.push({
+            identifier,
+            code: 'IDENTITY_MISMATCH',
+            detail: 'Track owner does not match the station owner.',
+          });
+          incomplete = true;
+          continue;
         }
-      } catch {
-        // Skip failed fetches — partial library is better than none
+
+        seenTrackIdentifiers.add(identifier);
+        tracks.push(track);
+      } catch (error) {
+        if (isConfirmedQdnNotFoundError(error)) {
+          diagnostics.push({
+            identifier,
+            code: 'RESOURCE_NOT_FOUND',
+            detail: error instanceof Error ? error.message : 'Track resource was not found.',
+          });
+          continue;
+        }
+
+        const code = getQdnResourceReadErrorCode(error);
+        diagnostics.push({
+          identifier,
+          code: code === 'MALFORMED' ? 'MALFORMED_RESOURCE' : 'RESOURCE_UNAVAILABLE',
+          detail: error instanceof Error ? error.message : 'Track resource could not be loaded.',
+        });
+        incomplete = true;
       }
     }
 
@@ -186,6 +241,8 @@ export async function loadLibrary(ownerName: string, ownerAddress: string): Prom
     }
 
     libraryTracks = tracks;
+    libraryDiagnostics = diagnostics;
+    libraryIncomplete = incomplete;
     libraryLoaded = true;
   } catch (error) {
     if (epoch !== libraryEpoch || libraryActiveScope !== targetScope) {
@@ -303,6 +360,8 @@ export function getTrackById(trackId: string): Track | undefined {
  */
 export function resetLibrary(): void {
   libraryTracks = [];
+  libraryIncomplete = false;
+  libraryDiagnostics = [];
   libraryLoaded = false;
   libraryLoading = false;
   libraryError = null;

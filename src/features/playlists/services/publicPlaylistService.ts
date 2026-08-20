@@ -18,6 +18,10 @@ import {
 import { deserializeTrackFromQdn, getTrackQdnIdentifier } from '../../tracks/services/trackService';
 import { resolveQdnCoverUrl, resolveTrackPlayback } from '../../radio/player/resolveTrackPlayback';
 import type { AudioTrack } from '../../../audio/playbackTypes';
+import {
+  getQdnResourceReadErrorCode,
+  isConfirmedQdnNotFoundError,
+} from '../../../qortium/qdnReadError';
 
 const PLAYLIST_SERVICE = 'PLAYLIST';
 const VERSION_SERVICE = 'JSON';
@@ -25,6 +29,21 @@ const TRACK_SERVICE = 'JSON';
 const PLAYLIST_IDENTIFIER_PREFIX = 'nodefm-playlist-';
 
 export type PublicPlaylistVersionStatus = 'ready' | 'missing' | 'malformed';
+
+export type PublicPlaylistDiagnosticCode =
+  'MALFORMED_RESOURCE' | 'RESOURCE_UNAVAILABLE' | 'RESOURCE_NOT_FOUND' | 'VERSION_DEGRADED';
+
+export type PublicPlaylistDiagnostic = {
+  qdnIdentifier: string;
+  code: PublicPlaylistDiagnosticCode;
+  detail: string;
+};
+
+export type PublicPlaylistLoadResult = {
+  status: 'complete' | 'incomplete';
+  playlists: PublicPlaylist[];
+  diagnostics: PublicPlaylistDiagnostic[];
+};
 
 export type PublicPlaylist = Playlist & {
   publisherName: string;
@@ -178,9 +197,11 @@ async function buildPublicPlaylist(
   }
 }
 
-export async function loadPublicPlaylists(publisherName?: string): Promise<PublicPlaylist[]> {
+export async function loadPublicPlaylists(
+  publisherName?: string,
+): Promise<PublicPlaylistLoadResult> {
   if (!publisherName) {
-    return [];
+    return { status: 'complete', playlists: [], diagnostics: [] };
   }
 
   const results = await searchQdnResources({
@@ -211,6 +232,8 @@ export async function loadPublicPlaylists(publisherName?: string): Promise<Publi
   }
 
   const playlists: PublicPlaylist[] = [];
+  const diagnostics: PublicPlaylistDiagnostic[] = [];
+  let incomplete = false;
 
   for (const ref of uniqueRefs.values()) {
     try {
@@ -221,18 +244,56 @@ export async function loadPublicPlaylists(publisherName?: string): Promise<Publi
       });
       const playlist = deserializePlaylistFromQdn(payload);
 
-      if (!playlist || !isPublicPlaylist(playlist)) {
+      if (!playlist) {
+        diagnostics.push({
+          qdnIdentifier: ref.identifier,
+          code: 'MALFORMED_RESOURCE',
+          detail: 'Logical playlist resource is malformed.',
+        });
+        incomplete = true;
         continue;
       }
 
-      playlists.push(await buildPublicPlaylist(ref.name, ref.identifier, playlist));
-    } catch {
-      // Malformed/unavailable logical playlists are isolated; they do not
-      // prevent other valid public playlists from being listed.
+      if (!isPublicPlaylist(playlist)) {
+        continue;
+      }
+
+      const publicPlaylist = await buildPublicPlaylist(ref.name, ref.identifier, playlist);
+      playlists.push(publicPlaylist);
+
+      if (publicPlaylist.versionStatus !== 'ready') {
+        diagnostics.push({
+          qdnIdentifier: ref.identifier,
+          code: 'VERSION_DEGRADED',
+          detail: publicPlaylist.versionError ?? 'Playlist version could not be reconstructed.',
+        });
+        incomplete = true;
+      }
+    } catch (error) {
+      if (isConfirmedQdnNotFoundError(error)) {
+        diagnostics.push({
+          qdnIdentifier: ref.identifier,
+          code: 'RESOURCE_NOT_FOUND',
+          detail: error instanceof Error ? error.message : 'Playlist resource was not found.',
+        });
+        continue;
+      }
+
+      const code = getQdnResourceReadErrorCode(error);
+      diagnostics.push({
+        qdnIdentifier: ref.identifier,
+        code: code === 'MALFORMED' ? 'MALFORMED_RESOURCE' : 'RESOURCE_UNAVAILABLE',
+        detail: error instanceof Error ? error.message : 'Playlist resource could not be loaded.',
+      });
+      incomplete = true;
     }
   }
 
-  return playlists.sort((left, right) => left.title.localeCompare(right.title));
+  return {
+    status: incomplete ? 'incomplete' : 'complete',
+    playlists: playlists.sort((left, right) => left.title.localeCompare(right.title)),
+    diagnostics,
+  };
 }
 
 export async function loadPublicPlaylistDetail(

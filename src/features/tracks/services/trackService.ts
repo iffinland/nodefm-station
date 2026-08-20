@@ -124,11 +124,22 @@ export function createTrack(input: CreateTrackInput): Track {
 
 export type EditTrackInput = Partial<
   Pick<Track, 'title' | 'artist' | 'description' | 'genres' | 'tags' | 'cover'>
->;
+> & {
+  /**
+   * When true, the track cover reference is explicitly removed. This is
+   * separate from `cover: undefined` so callers can distinguish "leave the
+   * current cover unchanged" from "remove the current cover".
+   */
+  removeCover?: boolean;
+};
 
 export function editTrack(track: Track, input: EditTrackInput): Track {
   if (input.title !== undefined && !isNonEmptyTrimmedString(input.title)) {
     throw new Error('Track title must be a non-empty string.');
+  }
+
+  if (input.cover !== undefined && input.removeCover === true) {
+    throw new Error('Track cover cannot be both replaced and removed.');
   }
 
   if (input.cover !== undefined && !isValidQdnResourceRef(input.cover)) {
@@ -137,11 +148,15 @@ export function editTrack(track: Track, input: EditTrackInput): Track {
 
   const genres = normalizeTrackTaxonomyValues(input.genres, 'Track genres');
   const tags = normalizeTrackTaxonomyValues(input.tags, 'Track tags');
+  const cover =
+    input.removeCover === true ? undefined : input.cover !== undefined ? input.cover : track.cover;
 
   return {
     ...track,
-    ...input,
     title: input.title !== undefined ? input.title.trim() : track.title,
+    artist: input.artist !== undefined ? input.artist : track.artist,
+    description: input.description !== undefined ? input.description : track.description,
+    cover,
     genres: input.genres !== undefined ? genres : track.genres,
     tags: input.tags !== undefined ? tags : track.tags,
     updatedAt: new Date().toISOString(),

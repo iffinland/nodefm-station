@@ -7,8 +7,10 @@
  * ============================================================ */
 
 import { publishResource } from '../../../qortium/qdn';
-import type { QdnResourceRef } from '../../../types/domain';
+import type { QdnResourceRef, Track } from '../../../types/domain';
 import { getCoverQdnIdentifier } from '../../tracks/services/trackService';
+import { updateTrack } from './libraryService';
+import type { EditTrackInput } from '../../tracks/services/trackService';
 
 export const COVER_INLINE_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -95,4 +97,46 @@ export async function publishTrackCoverImage(
     name: input.publisherName.trim(),
     identifier,
   };
+}
+
+export type PublishAndUpdateTrackCoverInput = {
+  trackId: string;
+  title: string;
+  publisherName: string;
+  file: File;
+  data64: string;
+  /**
+   * Any other metadata edits to apply in the same Track metadata resource
+   * update. `cover` and `removeCover` are intentionally omitted from this
+   * partial input because the new cover is appended after successful image
+   * publication.
+   */
+  metadata?: Omit<EditTrackInput, 'cover' | 'removeCover'>;
+};
+
+/**
+ * Publish a replacement cover first, then update the Track metadata only
+ * after image publication succeeds.
+ *
+ * If image publication fails, this throws before `updateTrack()` is called,
+ * so the current Track metadata and its old cover reference are preserved.
+ */
+export async function publishAndUpdateTrackCover(
+  input: PublishAndUpdateTrackCoverInput,
+): Promise<Track> {
+  const coverRef = await publishTrackCoverImage({
+    publisherName: input.publisherName,
+    title: input.title,
+    file: input.file,
+    data64: input.data64,
+  });
+
+  return updateTrack(
+    input.trackId,
+    {
+      ...(input.metadata ?? {}),
+      cover: coverRef,
+    },
+    input.publisherName,
+  );
 }

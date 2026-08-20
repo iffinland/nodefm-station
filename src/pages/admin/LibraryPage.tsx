@@ -21,7 +21,8 @@ import { ListenerUploadsAdminPanel } from '../../features/listener-submissions/c
 type LibraryTab = 'library' | 'uploads';
 
 export default function LibraryPage() {
-  const { tracks, loaded, loading, error, removeTrack, refresh } = useLibrary();
+  const { tracks, loaded, loading, error, incomplete, diagnostics, removeTrack, refresh } =
+    useLibrary();
   const [activeTab, setActiveTab] = useState<LibraryTab>('library');
   const [showUpload, setShowUpload] = useState(false);
   const [showAddQdn, setShowAddQdn] = useState(false);
@@ -99,6 +100,15 @@ export default function LibraryPage() {
         ) : (
           <>
             {removeError && <p className="form-error">{removeError}</p>}
+            {incomplete && (
+              <div className="form-error">
+                Library reconstruction is incomplete ({diagnostics.length} unavailable or malformed
+                resource{diagnostics.length === 1 ? '' : 's'}).{' '}
+                <button className="button button--secondary" type="button" onClick={refresh}>
+                  Retry
+                </button>
+              </div>
+            )}
             <div className="admin-library__toolbar">
               <button
                 className="button button--primary"
@@ -119,7 +129,12 @@ export default function LibraryPage() {
               </span>
             </div>
 
-            {tracks.length === 0 ? (
+            {tracks.length === 0 && incomplete ? (
+              <p className="admin-library__empty">
+                The station library could not be fully loaded. Retry before treating this as an
+                empty library.
+              </p>
+            ) : tracks.length === 0 ? (
               <p className="admin-library__empty">
                 No tracks in the library yet. Upload audio or add existing QDN resources to get
                 started.

@@ -98,6 +98,34 @@ describe('Track domain invariants', () => {
     expect(() => editTrack(track, { title: '  ' })).toThrow(/title/i);
     expect(() => editTrack(track, { cover: { service: '', name: 'x' } })).toThrow(/cover/i);
   });
+
+  it('removes a cover explicitly without changing audio or taxonomy', () => {
+    const track = createTrack(
+      trackInput({
+        cover: { service: 'IMAGE', name: 'Owner', identifier: 'cover-1' },
+        genres: ['Rock'],
+        tags: ['chill'],
+      }),
+    );
+
+    const updated = editTrack(track, { removeCover: true });
+
+    expect(updated.cover).toBeUndefined();
+    expect(updated.audio).toEqual(track.audio);
+    expect(updated.genres).toEqual(['Rock']);
+    expect(updated.tags).toEqual(['chill']);
+  });
+
+  it('rejects simultaneous cover replacement and removal', () => {
+    const track = createTrack(trackInput());
+
+    expect(() =>
+      editTrack(track, {
+        cover: { service: 'IMAGE', name: 'Owner', identifier: 'cover-2' },
+        removeCover: true,
+      }),
+    ).toThrow(/cannot be both/i);
+  });
 });
 
 describe('Playlist domain invariants', () => {

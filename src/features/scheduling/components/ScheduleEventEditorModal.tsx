@@ -15,6 +15,10 @@ import { useLikes } from '../../likes/useLikes';
 import { useRequestShow } from '../../dynamic-programs/request-show/useRequestShow';
 import { materializeRequestShowOccurrenceAction } from '../../dynamic-programs/request-show/requestShowStore';
 import { useScheduler } from '../hooks/useScheduler';
+import {
+  createDynamicScheduleEventAction,
+  ScheduleEventMaterializationError,
+} from '../services/scheduleStore';
 import type { ScheduleEvent, Track } from '../../../types/domain';
 import { isValidDurationMs } from '../../../utils/duration';
 import {
@@ -83,7 +87,7 @@ export function ScheduleEventEditorModal({
   const { station } = useStation();
   const { publisherName } = useStationIdentity();
   const { playlists, getVersions } = usePlaylists();
-  const { createEvent, updateEvent, deleteEvent } = useScheduler();
+  const { createEvent, updateEvent, deleteEvent, getEvent } = useScheduler();
   const { tracks: libraryTracks, loaded: libraryLoaded, loading: libraryLoading } = useLibrary();
   const { definitions, loaded: requestShowLoaded, loading: requestShowLoading } = useRequestShow();
   const timeZone = station?.timezone ?? '';
@@ -98,6 +102,9 @@ export function ScheduleEventEditorModal({
   const [programDefinitionId, setProgramDefinitionId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [materializationRecoveryEventId, setMaterializationRecoveryEventId] = useState<
+    string | null
+  >(null);
 
   const eligibleTracks = useMemo(
     () => libraryTracks.filter((track) => isValidDurationMs(track.durationMs)),
@@ -149,6 +156,45 @@ export function ScheduleEventEditorModal({
     [getVersions, playlistId],
   );
 
+  const materializeForScheduleEvent = async (
+    scheduleEvent: ScheduleEvent,
+    reuseExisting: boolean,
+  ) => {
+    const definition = definitions.find(
+      (candidate) => candidate.programDefinitionId === programDefinitionId,
+    );
+
+    if (!definition) {
+      throw new Error('Selected Request Show definition is no longer available.');
+    }
+
+    if (!publisherName) {
+      throw new Error('A registered Qortium name is required to materialize Request Show.');
+    }
+
+    if (!libraryLoaded) {
+      throw new Error('Station library is not ready. Wait for library loading to finish.');
+    }
+
+    if (!requestShowLoaded) {
+      throw new Error('Request Show configuration is not ready.');
+    }
+
+    if (!likesReady) {
+      throw new Error('Like records are not ready. Wait for Like loading to finish.');
+    }
+
+    await materializeRequestShowOccurrenceAction(
+      scheduleEvent,
+      definition,
+      eligibleTracks,
+      rankFromAggregates(eligibleTracks, aggregates),
+      new Date().toISOString(),
+      publisherName,
+      { reuseExisting },
+    );
+  };
+
   const handleSave = async () => {
     if (!timeZone) {
       setError('Station timezone is not configured.');
@@ -182,77 +228,72 @@ export function ScheduleEventEditorModal({
           ? ({ type: 'playlist', playlistId, playlistVersionId: versionId } as const)
           : ({ type: 'dynamic-program', programDefinitionId } as const);
 
+      const input = {
+        title: title.trim() || undefined,
+        startUtc: new Date(startUtcMs).toISOString(),
+        endUtc: new Date(endUtcMs).toISOString(),
+        source,
+      };
+
       setSaving(true);
       setError(null);
+      setMaterializationRecoveryEventId(null);
 
-      const savedEvent =
-        mode === 'create'
-          ? await createEvent({
-              title: title.trim() || undefined,
-              startUtc: new Date(startUtcMs).toISOString(),
-              endUtc: new Date(endUtcMs).toISOString(),
-              source,
-            })
-          : event
-            ? await updateEvent(event.eventId, {
-                title: title.trim() || undefined,
-                startUtc: new Date(startUtcMs).toISOString(),
-                endUtc: new Date(endUtcMs).toISOString(),
-                source,
-              })
-            : null;
+      let savedEvent: ScheduleEvent | null = null;
 
-      if (sourceType === 'dynamic-program' && savedEvent) {
-        const definition = definitions.find(
-          (candidate) => candidate.programDefinitionId === programDefinitionId,
-        );
-
-        if (!definition) {
-          throw new Error('Selected Request Show definition is no longer available.');
-        }
-
+      if (mode === 'create' && sourceType === 'dynamic-program') {
         if (!publisherName) {
-          throw new Error('A registered Qortium name is required to materialize Request Show.');
+          throw new Error('A registered Qortium name is required to schedule a Request Show.');
         }
 
-        if (!libraryLoaded) {
-          throw new Error('Station library is not ready. Wait for library loading to finish.');
-        }
+        savedEvent = await createDynamicScheduleEventAction(input, publisherName, (createdEvent) =>
+          materializeForScheduleEvent(createdEvent, true),
+        );
+      } else {
+        savedEvent =
+          mode === 'create'
+            ? await createEvent(input)
+            : event
+              ? await updateEvent(event.eventId, input)
+              : null;
 
-        if (!requestShowLoaded) {
-          throw new Error('Request Show configuration is not ready.');
-        }
-
-        if (!likesReady) {
-          throw new Error('Like records are not ready. Wait for Like loading to finish.');
-        }
-
-        try {
-          await materializeRequestShowOccurrenceAction(
-            savedEvent,
-            definition,
-            eligibleTracks,
-            rankFromAggregates(eligibleTracks, aggregates),
-            new Date().toISOString(),
-            publisherName,
-            { reuseExisting: mode === 'create' },
-          );
-        } catch (materializeError) {
-          if (mode === 'create') {
-            try {
-              await deleteEvent(savedEvent.eventId);
-            } catch {
-              // The original event may remain as a recoverable partial state.
-            }
-          }
-
-          throw materializeError;
+        if (sourceType === 'dynamic-program' && savedEvent) {
+          await materializeForScheduleEvent(savedEvent, mode === 'create');
         }
       }
 
       onClose();
     } catch (saveError) {
+      if (saveError instanceof ScheduleEventMaterializationError) {
+        setMaterializationRecoveryEventId(saveError.event.eventId);
+      }
+
       setError(saveError instanceof Error ? saveError.message : 'Failed to save schedule event.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRetryMaterialization = async () => {
+    if (!materializationRecoveryEventId || !publisherName) {
+      return;
+    }
+
+    const scheduleEvent = getEvent(materializationRecoveryEventId);
+    if (!scheduleEvent) {
+      setError('The published schedule event is no longer available to retry.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      await materializeForScheduleEvent(scheduleEvent, false);
+      setMaterializationRecoveryEventId(null);
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Retry failed.');
     } finally {
       setSaving(false);
     }
@@ -383,6 +424,17 @@ export function ScheduleEventEditorModal({
         )}
 
         {error && <p className="form-error">{error}</p>}
+
+        {materializationRecoveryEventId ? (
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={handleRetryMaterialization}
+            disabled={saving}
+          >
+            Retry Request Show lineup
+          </button>
+        ) : null}
 
         <div className="form-actions">
           {mode === 'edit' && event && (

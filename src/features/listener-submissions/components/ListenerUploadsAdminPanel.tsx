@@ -232,7 +232,7 @@ function SubmissionReviewCard({
         >
           Open Audio
         </button>
-        {review.status !== 'ACCEPTED' ? (
+        {review.status === 'PENDING' ? (
           <button className="button button--primary" type="button" onClick={onAccept}>
             Accept
           </button>

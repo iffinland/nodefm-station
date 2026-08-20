@@ -95,8 +95,9 @@ describe('public playlist discovery', () => {
 
     const result = await loadPublicPlaylists('Owner A');
 
-    expect(result.map((item) => item.playlistId)).toEqual(['a', 'c']);
-    expect(result.map((item) => item.title)).toEqual(['Alpha', 'Gamma']);
+    expect(result.status).toBe('complete');
+    expect(result.playlists.map((item) => item.playlistId)).toEqual(['a', 'c']);
+    expect(result.playlists.map((item) => item.title)).toEqual(['Alpha', 'Gamma']);
     expect(mockedFetch).toHaveBeenCalledTimes(4);
     expect(mockedSearch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -107,10 +108,10 @@ describe('public playlist discovery', () => {
         mode: 'ALL',
       }),
     );
-    expect(result[0].trackCount).toBe(1);
-    expect(result[0].totalDurationMs).toBe(1000);
-    expect(result[1].trackCount).toBe(2);
-    expect(result[1].totalDurationMs).toBe(3000);
+    expect(result.playlists[0].trackCount).toBe(1);
+    expect(result.playlists[0].totalDurationMs).toBe(1000);
+    expect(result.playlists[1].trackCount).toBe(2);
+    expect(result.playlists[1].totalDurationMs).toBe(3000);
   });
 
   it('skips resources that cannot be fetched or deserialized', async () => {
@@ -127,13 +128,20 @@ describe('public playlist discovery', () => {
       throw new Error('missing');
     });
 
-    await expect(loadPublicPlaylists('Owner')).resolves.toEqual([
+    const result = await loadPublicPlaylists('Owner');
+    expect(result.status).toBe('incomplete');
+    expect(result.playlists).toEqual([
       expect.objectContaining({ playlistId: 'a', publisherName: 'Owner' }),
     ]);
+    expect(result.diagnostics).toHaveLength(2);
   });
 
   it('returns an empty list when no station publisher is known', async () => {
-    await expect(loadPublicPlaylists()).resolves.toEqual([]);
+    await expect(loadPublicPlaylists()).resolves.toEqual({
+      status: 'complete',
+      playlists: [],
+      diagnostics: [],
+    });
     expect(mockedSearch).not.toHaveBeenCalled();
   });
 });

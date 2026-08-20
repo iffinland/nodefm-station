@@ -191,6 +191,43 @@ describe('QDN write request shapes', () => {
     });
   });
 
+  it('normalizes Unicode inline filenames to a transport-safe ASCII name', async () => {
+    mockedSend.mockResolvedValue({ accepted: true });
+
+    await publishResource({
+      service: 'IMAGE',
+      name: 'Owner',
+      identifier: 'nodefm-cover-1',
+      data64: 'aW1hZ2U=',
+      filename: 'cover õhtu.png',
+    });
+
+    const payload = mockedSend.mock.calls[0][0] as {
+      filename?: string;
+      sourceToken?: string;
+    };
+
+    expect(payload.filename).toMatch(/^nodefm-upload-[a-z0-9]+\.png$/);
+    expect(payload.sourceToken).toBeUndefined();
+  });
+
+  it('leaves sourceToken filenames unchanged because Home uses the selected source name', async () => {
+    mockedSend.mockResolvedValue({ accepted: true });
+
+    await publishResource({
+      service: 'AUDIO',
+      name: 'Owner',
+      identifier: 'nodefm-audio-1',
+      sourceToken: 'token-1',
+      filename: 'Metsajärve öö.mp3',
+    });
+
+    const payload = mockedSend.mock.calls[0][0] as { filename?: string; sourceToken?: string };
+
+    expect(payload.sourceToken).toBe('token-1');
+    expect(payload.filename).toBe('Metsajärve öö.mp3');
+  });
+
   it('deletes only the requested resource identifier', async () => {
     mockedSend.mockResolvedValue({ accepted: true });
 

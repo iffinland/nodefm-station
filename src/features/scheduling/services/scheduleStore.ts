@@ -167,6 +167,57 @@ export class ScheduleBatchPartialError extends Error {
   }
 }
 
+export type ScheduleDeleteFailure = {
+  eventId: string;
+  identifier: string;
+  error: string;
+};
+
+export type ScheduleRecurrenceDeleteResult = {
+  recurrenceId: string;
+  status: 'deleted' | 'partial';
+  deletedEventIds: string[];
+  remainingEventIds: string[];
+  failures: ScheduleDeleteFailure[];
+  recurrenceDeleteError?: string;
+};
+
+export class ScheduleRecurrenceDeletePartialError extends Error {
+  readonly result: ScheduleRecurrenceDeleteResult;
+
+  constructor(result: ScheduleRecurrenceDeleteResult) {
+    const remaining = result.remainingEventIds;
+    const failed = result.failures.length;
+    const detail = result.recurrenceDeleteError
+      ? `Recurring program cleanup partially completed, but the recurrence intent could not be deleted${
+          remaining.length > 0 ? `; remaining events: ${remaining.join(', ')}` : ''
+        }.`
+      : `Recurring program cleanup is incomplete: ${failed} event deletion(s) failed${
+          remaining.length > 0 ? `; remaining events: ${remaining.join(', ')}` : ''
+        }. Retry to continue cleanup.`;
+
+    super(detail);
+    this.name = 'ScheduleRecurrenceDeletePartialError';
+    this.result = result;
+  }
+}
+
+export class ScheduleEventMaterializationError extends Error {
+  readonly event: ScheduleEvent;
+  readonly cause: unknown;
+
+  constructor(event: ScheduleEvent, cause: unknown) {
+    super(
+      `Schedule event was published, but Request Show occurrence publication failed: ${
+        cause instanceof Error ? cause.message : 'Unknown error'
+      }. The event remains visible as ${event.eventId} and can be retried without creating a duplicate.`,
+    );
+    this.name = 'ScheduleEventMaterializationError';
+    this.event = event;
+    this.cause = cause;
+  }
+}
+
 function scheduleEventPublishResource(event: ScheduleEvent, ownerName: string) {
   assertValidScheduleEvent(event);
   const data64 = btoa(unescape(encodeURIComponent(serializeScheduleEventForQdn(event))));
@@ -554,6 +605,33 @@ export async function createScheduleEventAction(
   return event;
 }
 
+/**
+ * Create a concrete dynamic-program ScheduleEvent and then materialize its
+ * canonical Request Show occurrence.
+ *
+ * This deliberately does NOT attempt a best-effort rollback delete if
+ * occurrence materialization fails. A rollback delete is also a separate
+ * QDN write and can itself fail, leaving an invisible published event with no
+ * durable recovery path. Instead the event remains in local/remote schedule
+ * state and the caller receives `ScheduleEventMaterializationError` with the
+ * surviving event ID so it can retry materialization explicitly.
+ */
+export async function createDynamicScheduleEventAction(
+  input: CreateScheduleEventInput,
+  ownerName: string,
+  materializeOccurrence: (event: ScheduleEvent) => Promise<unknown>,
+): Promise<ScheduleEvent> {
+  const event = await createScheduleEventAction(input, ownerName);
+
+  try {
+    await materializeOccurrence(event);
+  } catch (cause) {
+    throw new ScheduleEventMaterializationError(event, cause);
+  }
+
+  return event;
+}
+
 export async function updateScheduleEventAction(
   eventId: string,
   input: EditScheduleEventInput,
@@ -844,29 +922,82 @@ export async function deleteScheduleRecurrenceAction(
   recurrenceId: string,
   ownerName: string,
   nowUtcMs: number,
-): Promise<void> {
+): Promise<ScheduleRecurrenceDeleteResult> {
   const recurrence = scheduleRecurrences.find((item) => item.recurrenceId === recurrenceId);
   if (!recurrence) {
     throw new Error(`Schedule recurrence not found: ${recurrenceId}`);
   }
 
+  const futureEvents = futureEventsForRecurrence(recurrenceId, nowUtcMs);
+  const deletedEventIds: string[] = [];
+  const failures: ScheduleDeleteFailure[] = [];
+
+  // Delete every child concrete occurrence before deleting the recurrence
+  // intent. This makes any partial failure recoverable: the recurrence parent
+  // still exists in QDN, so reload/reconstruction can discover the surviving
+  // children and retry cleanup without re-deleting already-successful ones.
+  for (const event of futureEvents) {
+    const identifier = getScheduleEventQdnIdentifier(event.eventId);
+    try {
+      await persistScheduleDelete(identifier, ownerName);
+      deletedEventIds.push(event.eventId);
+    } catch (error) {
+      failures.push({
+        eventId: event.eventId,
+        identifier,
+        error: error instanceof Error ? error.message : 'QDN delete was not accepted.',
+      });
+    }
+  }
+
+  const deletedIds = new Set(deletedEventIds);
+  const remainingEventIds = futureEvents
+    .filter((event) => !deletedIds.has(event.eventId))
+    .map((event) => event.eventId);
+
+  if (failures.length > 0) {
+    scheduleEvents = scheduleEvents.filter((event) => !deletedIds.has(event.eventId));
+    notify();
+
+    const result: ScheduleRecurrenceDeleteResult = {
+      recurrenceId,
+      status: 'partial',
+      deletedEventIds,
+      remainingEventIds,
+      failures,
+    };
+
+    throw new ScheduleRecurrenceDeletePartialError(result);
+  }
+
   try {
     await persistScheduleDelete(getScheduleRecurrenceQdnIdentifier(recurrenceId), ownerName);
   } catch (error) {
-    throw new Error(
-      `Failed to delete recurrence: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    );
-  }
+    scheduleEvents = scheduleEvents.filter((event) => !deletedIds.has(event.eventId));
+    notify();
 
-  // Delete only future concrete occurrences generated from this intent.
-  // Historical/past concrete events remain as already-played evidence.
-  const futureEvents = futureEventsForRecurrence(recurrenceId, nowUtcMs);
-  for (const event of futureEvents) {
-    await persistScheduleDelete(getScheduleEventQdnIdentifier(event.eventId), ownerName);
+    const result: ScheduleRecurrenceDeleteResult = {
+      recurrenceId,
+      status: 'partial',
+      deletedEventIds,
+      remainingEventIds,
+      failures,
+      recurrenceDeleteError:
+        error instanceof Error ? error.message : 'QDN recurrence delete was not accepted.',
+    };
+
+    throw new ScheduleRecurrenceDeletePartialError(result);
   }
 
   scheduleRecurrences = scheduleRecurrences.filter((item) => item.recurrenceId !== recurrenceId);
-  const futureIds = new Set(futureEvents.map((event) => event.eventId));
-  scheduleEvents = scheduleEvents.filter((event) => !futureIds.has(event.eventId));
+  scheduleEvents = scheduleEvents.filter((event) => !deletedIds.has(event.eventId));
   notify();
+
+  return {
+    recurrenceId,
+    status: 'deleted',
+    deletedEventIds,
+    remainingEventIds: [],
+    failures: [],
+  };
 }

@@ -36,6 +36,8 @@ export type SubmissionDiagnosticCode =
   | 'AUDIO_MISMATCH'
   | 'COVER_MISMATCH'
   | 'RESOURCE_UNAVAILABLE'
+  | 'RESOURCE_NOT_FOUND'
+  | 'MODERATION_UNAVAILABLE'
   | 'MODERATION_MISMATCH';
 
 export type SubmissionDiagnostic = {

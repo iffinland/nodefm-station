@@ -10,6 +10,8 @@
 
 import { sendBridgeRequest } from './bridge';
 import type { QdnResourceRef } from '../types/domain';
+import { normalizeQdnPublishFilename } from './publishFilename';
+import { QdnResourceReadError, isConfirmedQdnNotFoundError } from './qdnReadError';
 
 // ── Publish ─────────────────────────────────────────────────────────
 
@@ -114,7 +116,14 @@ export async function publishResource(input: PublishInput): Promise<PublishResul
   if (input.description) payload.description = input.description;
   if (input.category) payload.category = input.category;
   if (input.tags?.length) payload.tags = input.tags;
-  if (input.filename) payload.filename = input.filename;
+  if (input.filename) {
+    // The bridge ignores this field for sourceToken publications, so only
+    // inline data publications are normalized here. SourceToken publications
+    // still carry the original selected filename at the Qortium Home layer.
+    payload.filename = input.sourceToken
+      ? input.filename
+      : normalizeQdnPublishFilename(input.filename).transport;
+  }
   if (typeof input.fee === 'number') payload.fee = input.fee;
 
   return sendBridgeRequest(payload) as Promise<PublishResult>;
@@ -148,7 +157,11 @@ export async function publishMultipleResources(
     if (resource.description) payload.description = resource.description;
     if (resource.category) payload.category = resource.category;
     if (resource.tags?.length) payload.tags = resource.tags;
-    if (resource.filename) payload.filename = resource.filename;
+    if (resource.filename) {
+      payload.filename = resource.sourceToken
+        ? resource.filename
+        : normalizeQdnPublishFilename(resource.filename).transport;
+    }
     if (typeof resource.fee === 'number') payload.fee = resource.fee;
 
     return payload;
@@ -500,12 +513,30 @@ export function decodeQdnResourcePayload(value: unknown): unknown {
  * metadata records.
  */
 export async function fetchQdnResourceData(ref: QdnResourceRef): Promise<unknown> {
-  const result = await sendBridgeRequest({
-    action: 'FETCH_QDN_RESOURCE',
-    service: ref.service,
-    name: ref.name,
-    ...(ref.identifier ? { identifier: ref.identifier } : {}),
-  });
+  let result: unknown;
 
-  return decodeQdnResourcePayload(result);
+  try {
+    result = await sendBridgeRequest({
+      action: 'FETCH_QDN_RESOURCE',
+      service: ref.service,
+      name: ref.name,
+      ...(ref.identifier ? { identifier: ref.identifier } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'QDN resource fetch failed.';
+
+    throw new QdnResourceReadError(
+      isConfirmedQdnNotFoundError(error) ? 'NOT_FOUND' : 'UNAVAILABLE',
+      message,
+      error,
+    );
+  }
+
+  try {
+    return decodeQdnResourcePayload(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'QDN resource payload is malformed.';
+
+    throw new QdnResourceReadError('MALFORMED', message, error);
+  }
 }

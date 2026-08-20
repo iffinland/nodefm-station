@@ -293,8 +293,8 @@ export class AudioEngine {
   setVolume(volume: number): void {
     const clamped = Math.max(0, Math.min(1, volume));
     this.state = { ...this.state, volume: clamped, muted: clamped === 0 };
-    if (this.audio && !this.state.muted) {
-      this.audio.volume = clamped;
+    if (this.audio) {
+      this.audio.volume = this.state.muted ? 0 : clamped;
     }
     this.notify();
   }

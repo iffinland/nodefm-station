@@ -27,6 +27,7 @@ import {
 } from '../../../qortium/qdn';
 import { resolveNameWalletAddress } from '../../../qortium/identity';
 import { resolveAudioDurationFromUrl } from '../../../utils/duration';
+import { isConfirmedQdnNotFoundError } from '../../../qortium/qdnReadError';
 import { addTrackToLibrary, getTrackById } from '../../library/services/libraryService';
 import { createTrack } from '../../tracks/services/trackService';
 import {
@@ -52,7 +53,7 @@ import {
 
 type SubmissionListener = () => void;
 
-export type SubmissionReviewStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED';
+export type SubmissionReviewStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'UNRESOLVED';
 
 export type ListenerSubmissionMetadata = {
   service: string;
@@ -174,10 +175,7 @@ function metadataFromResult(result: {
 }
 
 function isMissingResourceError(value: unknown): boolean {
-  return (
-    value instanceof Error &&
-    /does not exist|not found|not published|unavailable|empty payload/i.test(value.message)
-  );
+  return isConfirmedQdnNotFoundError(value);
 }
 
 function diagnostic(
@@ -513,9 +511,8 @@ async function loadReviewRecordsInternal(
     } catch (fetchError) {
       if (isMissingResourceError(fetchError)) {
         diagnostics.push(
-          diagnostic('RESOURCE_UNAVAILABLE', identifier, 'Submission resource is unavailable.'),
+          diagnostic('RESOURCE_NOT_FOUND', identifier, 'Submission resource was not found.'),
         );
-        incomplete = true;
       } else {
         diagnostics.push(
           diagnostic(
@@ -632,11 +629,14 @@ async function loadReviewRecordsInternal(
         // No moderation resource yet is the normal PENDING state.
         status = 'PENDING';
       } else {
+        status = 'UNRESOLVED';
         moderationError =
           moderationFetchError instanceof Error
             ? moderationFetchError.message
             : 'Moderation state could not be resolved.';
-        diagnostics.push(diagnostic('MODERATION_MISMATCH', moderationIdentifier, moderationError));
+        diagnostics.push(
+          diagnostic('MODERATION_UNAVAILABLE', moderationIdentifier, moderationError),
+        );
         incomplete = true;
       }
     }
@@ -762,6 +762,12 @@ export async function acceptSubmission(
 ): Promise<AcceptSubmissionResult> {
   assertOwner(actorAddress, ownerAddress);
 
+  if (review.status === 'UNRESOLVED') {
+    throw new Error(
+      'Moderation state could not be resolved. Retry discovery before accepting this submission.',
+    );
+  }
+
   const submission = review.submission;
   const trackId = getAcceptedSubmissionTrackId(submission.submissionId);
 
@@ -855,6 +861,12 @@ export async function rejectSubmission(
   reason?: string,
 ): Promise<SubmissionModeration> {
   assertOwner(actorAddress, ownerAddress);
+
+  if (review.status === 'UNRESOLVED') {
+    throw new Error(
+      'Moderation state could not be resolved. Retry discovery before rejecting this submission.',
+    );
+  }
 
   if (review.status === 'ACCEPTED') {
     throw new Error(

@@ -81,29 +81,42 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <footer className="layout__player-bar">
+      <footer className="layout__player-bar" aria-label="Audio player">
         <div className="player-bar__info">
-          <span className="player-bar__status">
-            {playerState.mode === 'PLAYLIST' ? 'PLAYLIST' : 'LIVE'}
-          </span>
-          <span className="player-bar__track">
-            {currentTrack
-              ? `${currentTrack.title}${currentTrack.artist ? ` — ${currentTrack.artist}` : ''}`
-              : hasStationError
-                ? 'Station data unavailable'
-                : timeline.dataError
-                  ? 'Live radio data unavailable'
-                  : hasNoStation
-                    ? 'No station configured'
-                    : timeline.dataLoading
-                      ? 'Loading live radio…'
-                      : '—'}
-          </span>
-          {durationMs > 0 && (
-            <span className="player-bar__time">
-              {formatDurationMs(progressMs)} / {formatDurationMs(durationMs)}
+          {currentTrack?.coverUrl ? (
+            <img className="player-bar__cover" src={currentTrack.coverUrl} alt="" />
+          ) : (
+            <span className="player-bar__cover-placeholder" aria-hidden="true">
+              <span className="signal-cover__core signal-cover__core--sm" />
             </span>
           )}
+          <div className="player-bar__track-meta">
+            <span
+              className={`player-bar__status${
+                playerState.mode === 'PLAYLIST' ? ' player-bar__status--playlist' : ''
+              }`}
+            >
+              {playerState.mode === 'PLAYLIST' ? 'PLAYLIST' : 'AutoDJ-LIVE'}
+            </span>
+            <span className="player-bar__track">
+              {currentTrack
+                ? `${currentTrack.title}${currentTrack.artist ? ` — ${currentTrack.artist}` : ''}`
+                : hasStationError
+                  ? 'Station data unavailable'
+                  : timeline.dataError
+                    ? 'Live radio data unavailable'
+                    : hasNoStation
+                      ? 'No station configured'
+                      : timeline.dataLoading
+                        ? 'Loading live radio…'
+                        : '—'}
+            </span>
+            {durationMs > 0 && (
+              <span className="player-bar__time">
+                {formatDurationMs(progressMs)} / {formatDurationMs(durationMs)}
+              </span>
+            )}
+          </div>
         </div>
         <div className="player-bar__controls">
           {playerState.mode === 'PLAYLIST' && (
@@ -127,7 +140,9 @@ export function Layout() {
                 ⏭
               </button>
               <button
-                className={`player-bar__btn${playerState.playlistQueue?.shuffleEnabled ? ' player-bar__btn--active' : ''}`}
+                className={`player-bar__btn${
+                  playerState.playlistQueue?.shuffleEnabled ? ' player-bar__btn--active' : ''
+                }`}
                 type="button"
                 aria-label="Toggle shuffle"
                 onClick={togglePlaylistShuffle}
@@ -136,7 +151,9 @@ export function Layout() {
                 🔀
               </button>
               <button
-                className={`player-bar__btn${playerState.playlistQueue?.loopEnabled ? ' player-bar__btn--active' : ''}`}
+                className={`player-bar__btn${
+                  playerState.playlistQueue?.loopEnabled ? ' player-bar__btn--active' : ''
+                }`}
                 type="button"
                 aria-label="Toggle loop"
                 onClick={togglePlaylistLoop}
@@ -144,13 +161,13 @@ export function Layout() {
               >
                 🔁
               </button>
-              <button className="player-bar__btn" type="button" onClick={returnToLive}>
+              <button className="player-bar__return" type="button" onClick={returnToLive}>
                 Return to Live
               </button>
             </>
           )}
           <button
-            className="player-bar__btn"
+            className="player-bar__btn player-bar__btn--play"
             type="button"
             aria-label={isPlaying ? 'Pause' : 'Play'}
             onClick={togglePlayPause}
@@ -159,24 +176,26 @@ export function Layout() {
           >
             {isPlaying ? '❚❚' : '▶'}
           </button>
-          <button
-            className="player-bar__btn"
-            type="button"
-            aria-label={playerState.muted ? 'Unmute' : 'Mute'}
-            onClick={toggleMute}
-          >
-            {playerState.muted ? '🔇' : '🔊'}
-          </button>
-          <input
-            className="player-bar__volume"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={playerState.muted ? 0 : playerState.volume}
-            aria-label="Volume"
-            onChange={(event) => setVolume(Number(event.target.value))}
-          />
+          <div className="player-bar__volume-group">
+            <button
+              className="player-bar__btn"
+              type="button"
+              aria-label={playerState.muted ? 'Unmute' : 'Mute'}
+              onClick={toggleMute}
+            >
+              {playerState.muted ? '🔇' : '🔊'}
+            </button>
+            <input
+              className="player-bar__volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={playerState.muted ? 0 : playerState.volume}
+              aria-label="Volume"
+              onChange={(event) => setVolume(Number(event.target.value))}
+            />
+          </div>
         </div>
       </footer>
     </div>

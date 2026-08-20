@@ -35,6 +35,7 @@ import type {
   EditScheduleRecurrenceInput,
 } from '../services/scheduleService';
 import type { ScheduleRecurrenceApplyResult } from '../services/scheduleStore';
+import type { ScheduleRecurrenceDeleteResult } from '../services/scheduleStore';
 
 export type UseSchedulerResult = {
   events: ScheduleEvent[];
@@ -55,7 +56,7 @@ export type UseSchedulerResult = {
     input: EditScheduleRecurrenceInput,
   ) => Promise<ScheduleRecurrence>;
   retryRecurrenceEvents: (recurrenceId: string) => Promise<ScheduleRecurrenceApplyResult>;
-  deleteRecurrence: (recurrenceId: string) => Promise<void>;
+  deleteRecurrence: (recurrenceId: string) => Promise<ScheduleRecurrenceDeleteResult>;
   refresh: () => Promise<void>;
 };
 

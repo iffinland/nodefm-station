@@ -13,6 +13,8 @@ import {
   getLibraryLoaded,
   getLibraryLoading,
   getLibraryError,
+  getLibraryIncomplete,
+  getLibraryDiagnostics,
   addTrackToLibrary,
   updateTrack,
   removeTrackFromLibrary,
@@ -22,6 +24,7 @@ import {
   resetLibrary,
 } from '../features/library/services/libraryService';
 import type { CreateTrackInput, EditTrackInput } from '../features/tracks/services/trackService';
+import type { LibraryDiagnostic } from '../features/library/services/libraryService';
 import { useStationIdentity } from '../features/station';
 
 export type UseLibraryResult = {
@@ -29,6 +32,8 @@ export type UseLibraryResult = {
   loaded: boolean;
   loading: boolean;
   error: string | null;
+  incomplete: boolean;
+  diagnostics: LibraryDiagnostic[];
   addTrack: (track: Track) => Promise<Track>;
   createTrack: (input: CreateTrackInput) => Promise<Track>;
   editTrack: (trackId: string, input: EditTrackInput) => Promise<Track>;
@@ -44,6 +49,8 @@ export function useLibrary(): UseLibraryResult {
   const [loaded, setLoaded] = useState(getLibraryLoaded());
   const [loading, setLoading] = useState(getLibraryLoading());
   const [error, setError] = useState<string | null>(getLibraryError());
+  const [incomplete, setIncomplete] = useState(getLibraryIncomplete());
+  const [diagnostics, setDiagnostics] = useState<LibraryDiagnostic[]>(getLibraryDiagnostics());
 
   useEffect(() => {
     const unsubscribe = subscribeToLibrary(() => {
@@ -51,6 +58,8 @@ export function useLibrary(): UseLibraryResult {
       setLoaded(getLibraryLoaded());
       setLoading(getLibraryLoading());
       setError(getLibraryError());
+      setIncomplete(getLibraryIncomplete());
+      setDiagnostics(getLibraryDiagnostics());
     });
 
     return unsubscribe;
@@ -62,6 +71,8 @@ export function useLibrary(): UseLibraryResult {
     setTracks([]);
     setLoaded(false);
     setLoading(true);
+    setIncomplete(false);
+    setDiagnostics([]);
     await loadLibrary(publisherName, ownerAddress);
   }, [ownerAddress, publisherName]);
 
@@ -74,6 +85,8 @@ export function useLibrary(): UseLibraryResult {
       setLoaded(false);
       setLoading(false);
       setError(null);
+      setIncomplete(false);
+      setDiagnostics([]);
       return;
     }
 
@@ -82,6 +95,8 @@ export function useLibrary(): UseLibraryResult {
       setLoaded(getLibraryLoaded());
       setLoading(getLibraryLoading());
       setError(getLibraryError());
+      setIncomplete(getLibraryIncomplete());
+      setDiagnostics(getLibraryDiagnostics());
       return;
     }
 
@@ -91,6 +106,8 @@ export function useLibrary(): UseLibraryResult {
       setLoaded(false);
       setLoading(true);
       setError(null);
+      setIncomplete(false);
+      setDiagnostics([]);
       loadLibrary(publisherName, ownerAddress);
     }
   }, [ownerAddress, publisherName]);
@@ -111,6 +128,8 @@ export function useLibrary(): UseLibraryResult {
     loaded,
     loading,
     error,
+    incomplete,
+    diagnostics,
     addTrack: publisherName
       ? (track: Track) => addTrackToLibrary(track, publisherName)
       : async () => {

@@ -6,7 +6,12 @@
  * ============================================================ */
 
 import type { Playlist, PlaylistVersion } from '../../../types/domain';
-import { publishResource, fetchQdnResourceData, searchQdnResources } from '../../../qortium/qdn';
+import {
+  publishResource,
+  fetchQdnResourceData,
+  searchQdnResources,
+  deleteQdnResource,
+} from '../../../qortium/qdn';
 import {
   createPlaylist,
   editPlaylist,
@@ -22,6 +27,14 @@ import {
   type EditPlaylistInput,
   type PlaylistVersionInput,
 } from './playlistService';
+import {
+  collectPlaylistVersionReferences,
+  PlaylistVersionReferencedError,
+} from './playlistVersionReferenceService';
+import {
+  getQdnResourceReadErrorCode,
+  isConfirmedQdnNotFoundError,
+} from '../../../qortium/qdnReadError';
 
 // ── In-Memory Store ─────────────────────────────────────────────────
 
@@ -30,11 +43,27 @@ let playlistVersions: Map<string, PlaylistVersion[]> = new Map();
 let storeLoaded = false;
 let storeLoading = false;
 let storeError: string | null = null;
+let storeIncomplete = false;
+let storeDiagnostics: PlaylistStoreDiagnostic[] = [];
 let storeEpoch = 0;
 let storeActiveScope: string | null = null;
 
 type StoreListener = () => void;
 const listeners = new Set<StoreListener>();
+
+export type PlaylistStoreDiagnosticCode =
+  | 'INVALID_METADATA'
+  | 'MALFORMED_RESOURCE'
+  | 'RESOURCE_UNAVAILABLE'
+  | 'RESOURCE_NOT_FOUND'
+  | 'IDENTITY_MISMATCH';
+
+export type PlaylistStoreDiagnostic = {
+  identifier: string;
+  kind: 'playlist' | 'version';
+  code: PlaylistStoreDiagnosticCode;
+  detail: string;
+};
 
 function notify() {
   listeners.forEach((fn) => fn());
@@ -119,6 +148,14 @@ export function getStoreError(): string | null {
   return storeError;
 }
 
+export function getStoreIncomplete(): boolean {
+  return storeIncomplete;
+}
+
+export function getStoreDiagnostics(): PlaylistStoreDiagnostic[] {
+  return [...storeDiagnostics];
+}
+
 export function getStoreActiveScope(): string | null {
   return storeActiveScope;
 }
@@ -174,7 +211,9 @@ export async function loadPlaylistStore(ownerName: string, ownerAddress: string)
     });
 
     const loaded: Playlist[] = [];
+    const diagnostics: PlaylistStoreDiagnostic[] = [];
     const seenPlaylistIdentifiers = new Set<string>();
+    let incomplete = false;
 
     for (const result of playlistResults) {
       if (!result.identifier || !result.identifier.startsWith(PLAYLIST_IDENTIFIER_PREFIX)) continue;
@@ -182,19 +221,59 @@ export async function loadPlaylistStore(ownerName: string, ownerAddress: string)
       if (result.identifier.startsWith(VERSION_IDENTIFIER_PREFIX)) continue;
       if (seenPlaylistIdentifiers.has(result.identifier)) continue;
 
+      const identifier = result.identifier;
+
       try {
         const payload = await fetchQdnResourceData({
           service: PLAYLIST_SERVICE,
           name: ownerName,
-          identifier: result.identifier,
+          identifier,
         });
         const playlist = deserializePlaylistFromQdn(payload);
-        if (playlist && playlist.ownerAddress === ownerAddress) {
-          seenPlaylistIdentifiers.add(result.identifier);
-          loaded.push(playlist);
+
+        if (!playlist) {
+          diagnostics.push({
+            identifier,
+            kind: 'playlist',
+            code: 'MALFORMED_RESOURCE',
+            detail: 'Logical playlist resource is malformed.',
+          });
+          incomplete = true;
+          continue;
         }
-      } catch {
-        // skip
+
+        if (playlist.ownerAddress !== ownerAddress) {
+          diagnostics.push({
+            identifier,
+            kind: 'playlist',
+            code: 'IDENTITY_MISMATCH',
+            detail: 'Playlist owner does not match the station owner.',
+          });
+          incomplete = true;
+          continue;
+        }
+
+        seenPlaylistIdentifiers.add(identifier);
+        loaded.push(playlist);
+      } catch (error) {
+        if (isConfirmedQdnNotFoundError(error)) {
+          diagnostics.push({
+            identifier,
+            kind: 'playlist',
+            code: 'RESOURCE_NOT_FOUND',
+            detail: error instanceof Error ? error.message : 'Playlist resource was not found.',
+          });
+          continue;
+        }
+
+        const code = getQdnResourceReadErrorCode(error);
+        diagnostics.push({
+          identifier,
+          kind: 'playlist',
+          code: code === 'MALFORMED' ? 'MALFORMED_RESOURCE' : 'RESOURCE_UNAVAILABLE',
+          detail: error instanceof Error ? error.message : 'Playlist resource could not be loaded.',
+        });
+        incomplete = true;
       }
     }
 
@@ -221,21 +300,50 @@ export async function loadPlaylistStore(ownerName: string, ownerAddress: string)
       if (!result.identifier || !result.identifier.startsWith(VERSION_IDENTIFIER_PREFIX)) continue;
       if (seenVersionIdentifiers.has(result.identifier)) continue;
 
+      const identifier = result.identifier;
+
       try {
         const payload = await fetchQdnResourceData({
           service: VERSION_SERVICE,
           name: ownerName,
-          identifier: result.identifier,
+          identifier,
         });
         const version = deserializePlaylistVersionFromQdn(payload);
-        if (version) {
-          seenVersionIdentifiers.add(result.identifier);
-          const existing = versionMap.get(version.playlistId) ?? [];
-          existing.push(version);
-          versionMap.set(version.playlistId, existing);
+
+        if (!version) {
+          diagnostics.push({
+            identifier,
+            kind: 'version',
+            code: 'MALFORMED_RESOURCE',
+            detail: 'Playlist version resource is malformed.',
+          });
+          incomplete = true;
+          continue;
         }
-      } catch {
-        // skip
+
+        seenVersionIdentifiers.add(identifier);
+        const existing = versionMap.get(version.playlistId) ?? [];
+        existing.push(version);
+        versionMap.set(version.playlistId, existing);
+      } catch (error) {
+        if (isConfirmedQdnNotFoundError(error)) {
+          diagnostics.push({
+            identifier,
+            kind: 'version',
+            code: 'RESOURCE_NOT_FOUND',
+            detail: error instanceof Error ? error.message : 'Version resource was not found.',
+          });
+          continue;
+        }
+
+        const code = getQdnResourceReadErrorCode(error);
+        diagnostics.push({
+          identifier,
+          kind: 'version',
+          code: code === 'MALFORMED' ? 'MALFORMED_RESOURCE' : 'RESOURCE_UNAVAILABLE',
+          detail: error instanceof Error ? error.message : 'Version resource could not be loaded.',
+        });
+        incomplete = true;
       }
     }
 
@@ -249,6 +357,8 @@ export async function loadPlaylistStore(ownerName: string, ownerAddress: string)
     }
 
     playlistVersions = versionMap;
+    storeDiagnostics = diagnostics;
+    storeIncomplete = incomplete;
     storeLoaded = true;
   } catch (error) {
     if (epoch !== storeEpoch || storeActiveScope !== targetScope) {
@@ -409,11 +519,126 @@ export async function publishPlaylistVersion(
   return { ok: true, version };
 }
 
+/**
+ * Tombstone an old immutable PlaylistVersion.
+ *
+ * The reference check is performed in production code against current QDN
+ * state, not only in the UI. This action never deletes the logical Playlist.
+ */
+export async function deletePlaylistVersion(
+  versionId: string,
+  ownerName: string,
+  ownerAddress: string,
+): Promise<void> {
+  const playlistEntry = [...playlistVersions.entries()].find(([, versions]) =>
+    versions.some((version) => version.versionId === versionId),
+  );
+
+  if (!playlistEntry) {
+    throw new Error(`Playlist version not found: ${versionId}`);
+  }
+
+  const [playlistId, versions] = playlistEntry;
+  const version = versions.find((candidate) => candidate.versionId === versionId);
+  const playlist = playlists.find((candidate) => candidate.playlistId === playlistId);
+
+  if (!version || !playlist) {
+    throw new Error(`Playlist version not found: ${versionId}`);
+  }
+
+  if (playlist.ownerAddress !== ownerAddress) {
+    throw new Error('Only the station owner may delete playlist versions.');
+  }
+
+  const references = await collectPlaylistVersionReferences(versionId, ownerName);
+  if (references.length > 0) {
+    throw new PlaylistVersionReferencedError(references);
+  }
+
+  if (playlist.latestVersionId === versionId) {
+    throw new Error('The latest PlaylistVersion cannot be deleted directly.');
+  }
+
+  try {
+    const result = (await deleteQdnResource({
+      service: VERSION_SERVICE,
+      name: ownerName,
+      identifier: getPlaylistVersionQdnIdentifier(versionId),
+    })) as { accepted?: boolean };
+
+    if (result?.accepted !== true) {
+      throw new Error('QDN delete was not accepted.');
+    }
+  } catch (error) {
+    throw new Error(
+      `Failed to delete playlist version: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    );
+  }
+
+  const nextVersions = versions.filter((candidate) => candidate.versionId !== versionId);
+  playlistVersions.set(playlistId, nextVersions);
+  notify();
+}
+
+/**
+ * Point a logical Playlist back at an existing immutable version without
+ * mutating that version resource. This is deliberately a separate,
+ * explicit admin action rather than an automatic side effect of deletion.
+ */
+export async function restorePlaylistVersionAsLatest(
+  playlistId: string,
+  versionId: string,
+  ownerName: string,
+  ownerAddress: string,
+): Promise<Playlist> {
+  const playlist = playlists.find((candidate) => candidate.playlistId === playlistId);
+  if (!playlist) {
+    throw new Error(`Playlist not found: ${playlistId}`);
+  }
+
+  if (playlist.ownerAddress !== ownerAddress) {
+    throw new Error('Only the station owner may restore playlist versions.');
+  }
+
+  const versions = playlistVersions.get(playlistId) ?? [];
+  const version = versions.find((candidate) => candidate.versionId === versionId);
+  if (!version) {
+    throw new Error(`Playlist version not found: ${versionId}`);
+  }
+
+  if (playlist.latestVersionId === versionId) {
+    return playlist;
+  }
+
+  const updatedPlaylist: Playlist = {
+    ...playlist,
+    latestVersionId: versionId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    await persistPlaylist(updatedPlaylist, ownerName);
+  } catch (error) {
+    throw new Error(
+      `Failed to restore playlist version as latest: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`,
+    );
+  }
+
+  const index = playlists.findIndex((candidate) => candidate.playlistId === playlistId);
+  playlists = [...playlists.slice(0, index), updatedPlaylist, ...playlists.slice(index + 1)];
+  notify();
+  return updatedPlaylist;
+}
+
 // ── Reset ───────────────────────────────────────────────────────────
 
 export function resetPlaylistStore(): void {
   playlists = [];
   playlistVersions = new Map();
+  storeIncomplete = false;
+  storeDiagnostics = [];
   storeLoaded = false;
   storeLoading = false;
   storeError = null;

@@ -14,7 +14,8 @@ import { usePlaylists } from '../../hooks/usePlaylists';
 import { useStationIdentity } from '../../features/station';
 
 export default function PlaylistsAdminPage() {
-  const { playlists, loaded, loading, error, createPlaylist, refresh } = usePlaylists();
+  const { playlists, loaded, loading, error, incomplete, diagnostics, createPlaylist, refresh } =
+    usePlaylists();
   const { ownerAddress } = useStationIdentity();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -67,6 +68,15 @@ export default function PlaylistsAdminPage() {
   return (
     <PageShell title="Playlists">
       <div className="admin-playlists">
+        {incomplete && (
+          <div className="form-error">
+            Playlist reconstruction is incomplete ({diagnostics.length} unavailable or malformed
+            resource{diagnostics.length === 1 ? '' : 's'}).{' '}
+            <button className="button button--secondary" type="button" onClick={refresh}>
+              Retry
+            </button>
+          </div>
+        )}
         <div className="admin-playlists__toolbar">
           <button
             className="button button--primary"
@@ -132,7 +142,11 @@ export default function PlaylistsAdminPage() {
           </div>
         )}
 
-        {playlists.length === 0 && !showCreate ? (
+        {playlists.length === 0 && incomplete && !showCreate ? (
+          <p className="admin-playlists__empty">
+            Playlists could not be fully loaded. Retry before treating this as an empty store.
+          </p>
+        ) : playlists.length === 0 && !showCreate ? (
           <p className="admin-playlists__empty">
             No playlists yet. Create one to start building your station programming.
           </p>

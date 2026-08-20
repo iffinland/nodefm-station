@@ -24,16 +24,21 @@ export default function PlaylistsPage() {
   const [playlists, setPlaylists] = useState<PublicPlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [incomplete, setIncomplete] = useState(false);
   const [shareTarget, setShareTarget] = useState<ShareTargetInput | null>(null);
 
   const load = useCallback(async (name: string) => {
     setLoading(true);
     setError(null);
+    setIncomplete(false);
 
     try {
-      setPlaylists(await loadPublicPlaylists(name));
+      const result = await loadPublicPlaylists(name);
+      setPlaylists(result.playlists);
+      setIncomplete(result.status === 'incomplete');
     } catch (err) {
       setPlaylists([]);
+      setIncomplete(false);
       setError(err instanceof Error ? err.message : 'Failed to load public playlists.');
     } finally {
       setLoading(false);
@@ -49,6 +54,7 @@ export default function PlaylistsPage() {
       setLoading(false);
       setPlaylists([]);
       setError(null);
+      setIncomplete(false);
       return;
     }
 
@@ -66,20 +72,35 @@ export default function PlaylistsPage() {
             detail={error}
             onRetry={() => publisherName && load(publisherName)}
           />
+        ) : playlists.length === 0 && incomplete ? (
+          <p className="playlists-page__placeholder">
+            Some public station playlists could not be loaded. Please retry.
+          </p>
         ) : playlists.length === 0 ? (
           <p className="playlists-page__placeholder">
             No public station playlists have been published yet.
           </p>
         ) : (
           <>
+            {incomplete && (
+              <p className="form-error">
+                Some public station playlists could not be loaded. The list below may be incomplete.
+              </p>
+            )}
             <ul className="public-playlists__list">
               {playlists.map((playlist) => (
                 <li
                   key={`${playlist.publisherName}-${playlist.playlistId}`}
-                  className="public-playlist-card"
+                  className={`public-playlist-card${
+                    playlist.versionStatus === 'ready' ? '' : ' public-playlist-card--unavailable'
+                  }`}
                 >
-                  {playlist.coverUrl && (
+                  {playlist.coverUrl ? (
                     <img className="public-playlist-card__cover" src={playlist.coverUrl} alt="" />
+                  ) : (
+                    <div className="public-playlist-card__cover-placeholder" aria-hidden="true">
+                      <span className="signal-cover__core" />
+                    </div>
                   )}
                   <div className="public-playlist-card__info">
                     <h3 className="public-playlist-card__title">{playlist.title}</h3>

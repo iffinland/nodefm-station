@@ -16,10 +16,14 @@ import {
   getStoreLoaded,
   getStoreLoading,
   getStoreError,
+  getStoreIncomplete,
+  getStoreDiagnostics,
   addPlaylist,
   updatePlaylist,
   duplicatePlaylistAction,
   publishPlaylistVersion,
+  deletePlaylistVersion,
+  restorePlaylistVersionAsLatest,
   getStoreLoadAction,
   resetPlaylistStore,
 } from '../features/playlists/services/playlistStore';
@@ -28,6 +32,7 @@ import type {
   EditPlaylistInput,
   PlaylistVersionInput,
 } from '../features/playlists/services/playlistService';
+import type { PlaylistStoreDiagnostic } from '../features/playlists/services/playlistStore';
 import { useStationIdentity } from '../features/station';
 
 export type UsePlaylistsResult = {
@@ -35,6 +40,9 @@ export type UsePlaylistsResult = {
   loaded: boolean;
   loading: boolean;
   error: string | null;
+  incomplete: boolean;
+  diagnostics: PlaylistStoreDiagnostic[];
+  revision: number;
   getPlaylist: (id: string) => Playlist | undefined;
   getVersions: (id: string) => PlaylistVersion[];
   getLatestVersion: (id: string) => PlaylistVersion | undefined;
@@ -48,6 +56,8 @@ export type UsePlaylistsResult = {
     | { ok: false; error: string; invalidTrackIds: string[] }
     | { ok: false; partial: true; version: PlaylistVersion; error: string }
   >;
+  deleteVersion: (versionId: string) => Promise<void>;
+  restoreVersionAsLatest: (playlistId: string, versionId: string) => Promise<Playlist>;
   refresh: () => Promise<void>;
 };
 
@@ -58,6 +68,9 @@ export function usePlaylists(): UsePlaylistsResult {
   const [loaded, setLoaded] = useState(getStoreLoaded());
   const [loading, setLoading] = useState(getStoreLoading());
   const [error, setError] = useState<string | null>(getStoreError());
+  const [incomplete, setIncomplete] = useState(getStoreIncomplete());
+  const [diagnostics, setDiagnostics] = useState<PlaylistStoreDiagnostic[]>(getStoreDiagnostics());
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const unsubscribe = subscribeToPlaylistStore(() => {
@@ -65,6 +78,9 @@ export function usePlaylists(): UsePlaylistsResult {
       setLoaded(getStoreLoaded());
       setLoading(getStoreLoading());
       setError(getStoreError());
+      setIncomplete(getStoreIncomplete());
+      setDiagnostics(getStoreDiagnostics());
+      setRevision((current) => current + 1);
     });
 
     return unsubscribe;
@@ -76,6 +92,8 @@ export function usePlaylists(): UsePlaylistsResult {
     setPlaylists([]);
     setLoaded(false);
     setLoading(true);
+    setIncomplete(false);
+    setDiagnostics([]);
     await loadPlaylistStore(publisherName, ownerAddress);
   }, [ownerAddress, publisherName]);
 
@@ -88,6 +106,8 @@ export function usePlaylists(): UsePlaylistsResult {
       setLoaded(false);
       setLoading(false);
       setError(null);
+      setIncomplete(false);
+      setDiagnostics([]);
       return;
     }
 
@@ -96,6 +116,8 @@ export function usePlaylists(): UsePlaylistsResult {
       setLoaded(getStoreLoaded());
       setLoading(getStoreLoading());
       setError(getStoreError());
+      setIncomplete(getStoreIncomplete());
+      setDiagnostics(getStoreDiagnostics());
       return;
     }
 
@@ -105,12 +127,16 @@ export function usePlaylists(): UsePlaylistsResult {
       setLoaded(false);
       setLoading(true);
       setError(null);
+      setIncomplete(false);
+      setDiagnostics([]);
       loadPlaylistStore(publisherName, ownerAddress);
     }
   }, [ownerAddress, publisherName]);
 
   const throwIfNoName = () => {
-    if (!publisherName) throw new Error('A registered Qortium name is required.');
+    if (!publisherName || !ownerAddress) {
+      throw new Error('A registered Qortium name and owner account are required.');
+    }
   };
 
   return {
@@ -118,6 +144,9 @@ export function usePlaylists(): UsePlaylistsResult {
     loaded,
     loading,
     error,
+    incomplete,
+    diagnostics,
+    revision,
     getPlaylist: getPlaylistById,
     getVersions: getPlaylistVersions,
     getLatestVersion: getLatestPlaylistVersion,
@@ -136,6 +165,14 @@ export function usePlaylists(): UsePlaylistsResult {
     publishVersion: async (input: PlaylistVersionInput) => {
       throwIfNoName();
       return publishPlaylistVersion(input, publisherName!);
+    },
+    deleteVersion: async (versionId: string) => {
+      throwIfNoName();
+      return deletePlaylistVersion(versionId, publisherName!, ownerAddress!);
+    },
+    restoreVersionAsLatest: async (playlistId: string, versionId: string) => {
+      throwIfNoName();
+      return restorePlaylistVersionAsLatest(playlistId, versionId, publisherName!, ownerAddress!);
     },
     refresh,
   };
