@@ -6,6 +6,7 @@ const surfaceModules = import.meta.glob(
     '../library/components/AddQdnFlow.tsx',
     '../library/components/TrackEditModal.tsx',
     '../listener-submissions/components/SubmitMusicForm.tsx',
+    '../bulk-import/components/BulkImportRowEditor.tsx',
   ],
   {
     query: '?raw',
@@ -18,7 +19,7 @@ const surfaceSources = Object.values(surfaceModules) as string[];
 
 describe('metadata intelligence reuse surfaces', () => {
   it('keeps Admin and Listener metadata entry on the same shared Artist/Title components', () => {
-    expect(surfaceSources.length).toBe(4);
+    expect(surfaceSources.length).toBe(5);
 
     for (const source of surfaceSources) {
       expect(source).toContain("from '../../metadata-intelligence'");

@@ -10,7 +10,9 @@ import { useSearchParams } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
+import { Modal } from '../../components/Modal';
 import { useLibrary } from '../../hooks/useLibrary';
+import { useStationIdentity } from '../../features/station';
 import { formatDurationMs } from '../../utils/duration';
 import type { Track } from '../../types/domain';
 import { TrackEditModal } from '../../features/library/components/TrackEditModal';
@@ -18,6 +20,7 @@ import { UploadFlow } from '../../features/library/components/UploadFlow';
 import { AddQdnFlow } from '../../features/library/components/AddQdnFlow';
 import { TrackCover } from '../../features/library/components/TrackCover';
 import { ListenerUploadsAdminPanel } from '../../features/listener-submissions/components/ListenerUploadsAdminPanel';
+import { BulkImportWorkspace } from '../../features/bulk-import';
 import {
   TrackFilterBar,
   TrackMetadataLine,
@@ -36,8 +39,11 @@ export default function LibraryPage() {
   const [activeTab, setActiveTab] = useState<LibraryTab>('library');
   const [showUpload, setShowUpload] = useState(false);
   const [showAddQdn, setShowAddQdn] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const { ownerAddress, publisherName } = useStationIdentity();
+  const bulkScope = ownerAddress ?? publisherName ?? '';
 
   useEffect(() => {
     if (libraryAction === 'upload') {
@@ -164,6 +170,13 @@ export default function LibraryPage() {
               >
                 Add from QDN
               </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => setShowBulkImport(true)}
+              >
+                Bulk Import
+              </button>
             </div>
 
             {tracks.length > 0 ? (
@@ -210,6 +223,12 @@ export default function LibraryPage() {
       {showUpload && <UploadFlow onClose={handleUploadClose} onComplete={handleUploadComplete} />}
 
       {showAddQdn && <AddQdnFlow onClose={handleAddQdnClose} onComplete={handleAddQdnComplete} />}
+
+      {showBulkImport && (
+        <Modal title="Bulk Import" onClose={() => setShowBulkImport(false)} wide>
+          <BulkImportWorkspace role="admin" scope={bulkScope} showHeader={false} />
+        </Modal>
+      )}
 
       {editingTrack && (
         <TrackEditModal track={editingTrack} onClose={() => setEditingTrack(null)} />
