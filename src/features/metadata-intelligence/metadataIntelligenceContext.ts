@@ -9,6 +9,7 @@ export type MetadataIntelligenceContextValue = {
   index: MetadataIndex;
   artists: string[];
   getTitlesForArtist: (artistValue: string) => string[];
+  getAlbumsForArtist: (artistValue: string) => string[];
 };
 
 export const MetadataIntelligenceContext = createContext<MetadataIntelligenceContextValue | null>(

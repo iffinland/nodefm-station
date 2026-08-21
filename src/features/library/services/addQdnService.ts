@@ -13,6 +13,8 @@ import type { CreateTrackInput } from '../../tracks/services/trackService';
 export type AddQdnTrackInput = {
   title: string;
   artist?: string;
+  album?: string;
+  releaseDate?: string;
   description?: string;
   audio: QdnResourceRef;
   durationMs: number;
@@ -26,6 +28,8 @@ export function buildAddQdnTrackInput(input: AddQdnTrackInput): CreateTrackInput
   return {
     title: input.title.trim() || input.audio.name || 'Untitled',
     artist: input.artist?.trim() || undefined,
+    album: input.album?.trim() || undefined,
+    releaseDate: input.releaseDate?.trim() || undefined,
     description: input.description?.trim() || undefined,
     audio: {
       service: input.audio.service,

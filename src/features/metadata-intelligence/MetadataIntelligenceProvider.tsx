@@ -10,6 +10,7 @@ import { useCallback, useMemo, type ReactNode } from 'react';
 import { useLibrary } from '../../hooks/useLibrary';
 import {
   buildMetadataIndex,
+  getAlbumDisplayValues,
   getArtistDisplayValues,
   getTitleDisplayValues,
 } from './metadataIntelligence';
@@ -29,9 +30,14 @@ export function MetadataIntelligenceProvider({ children }: { children: ReactNode
     [index],
   );
 
+  const getAlbumsForArtist = useCallback(
+    (artistValue: string) => getAlbumDisplayValues(index, artistValue),
+    [index],
+  );
+
   const value: MetadataIntelligenceContextValue = useMemo(
-    () => ({ index, artists, getTitlesForArtist }),
-    [artists, getTitlesForArtist, index],
+    () => ({ index, artists, getTitlesForArtist, getAlbumsForArtist }),
+    [artists, getAlbumsForArtist, getTitlesForArtist, index],
   );
 
   return (

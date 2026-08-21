@@ -19,6 +19,10 @@ import type {
 import { isRecord } from '../../../utils/record';
 import { isValidDurationMs } from '../../../utils/duration';
 import { isNonEmptyTrimmedString } from '../../../utils/validation';
+import {
+  isValidReleaseDateValue,
+  normalizeReleaseDateInput,
+} from '../../metadata-intelligence/releaseDate';
 
 export const SUBMISSION_QDN_SERVICE = 'JSON';
 export const SUBMISSION_IDENTIFIER_PREFIX = 'nodefm-track-submission-';
@@ -141,6 +145,8 @@ export type CreateListenerTrackSubmissionInput = {
   submitterAddress: string;
   title: string;
   artist?: string;
+  album?: string;
+  releaseDate?: string;
   description?: string;
   audio: QdnResourceRef;
   cover?: QdnResourceRef;
@@ -167,6 +173,21 @@ export function createListenerTrackSubmission(
 
   if (!isNonEmptyTrimmedString(input.title)) {
     throw new Error('Submission title must be a non-empty string.');
+  }
+
+  if (input.album !== undefined && typeof input.album !== 'string') {
+    throw new Error('Submission album must be a string.');
+  }
+
+  if (input.releaseDate !== undefined) {
+    if (typeof input.releaseDate !== 'string') {
+      throw new Error('Submission release date must be a string.');
+    }
+
+    const releaseDate = normalizeReleaseDateInput(input.releaseDate);
+    if (releaseDate && !isValidReleaseDateValue(releaseDate)) {
+      throw new Error('Submission release date must use YYYY, YYYY-MM, or YYYY-MM-DD.');
+    }
   }
 
   if (!isValidQdnResourceRef(input.audio)) {
@@ -208,6 +229,11 @@ export function createListenerTrackSubmission(
     submitterAddress: input.submitterAddress.trim(),
     title: input.title.trim(),
     artist: input.artist?.trim(),
+    album: input.album !== undefined && input.album.trim() ? input.album.trim() : undefined,
+    releaseDate:
+      input.releaseDate !== undefined && normalizeReleaseDateInput(input.releaseDate)
+        ? normalizeReleaseDateInput(input.releaseDate)
+        : undefined,
     description: input.description,
     audio: {
       service: input.audio.service.toUpperCase(),
@@ -245,6 +271,10 @@ export function isListenerTrackSubmissionRecord(value: unknown): value is Listen
     (candidate.cover === undefined || isValidQdnResourceRef(candidate.cover)) &&
     isValidDurationMs(candidate.durationMs) &&
     (candidate.artist === undefined || typeof candidate.artist === 'string') &&
+    (candidate.album === undefined || typeof candidate.album === 'string') &&
+    (candidate.releaseDate === undefined ||
+      (typeof candidate.releaseDate === 'string' &&
+        (!candidate.releaseDate.trim() || isValidReleaseDateValue(candidate.releaseDate)))) &&
     (candidate.description === undefined || typeof candidate.description === 'string') &&
     (candidate.genres === undefined ||
       (Array.isArray(candidate.genres) &&

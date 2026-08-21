@@ -1517,6 +1517,14 @@ select {
   flex-wrap: wrap;
 }
 
+.admin-dashboard__action-link {
+  text-decoration: none;
+}
+
+.admin-dashboard__action-link:hover {
+  text-decoration: none;
+}
+
 .admin-dashboard__action-placeholder {
   padding: 0.35rem 0.75rem;
   border-radius: 6px;
@@ -2145,6 +2153,22 @@ select {
   text-align: left;
   cursor: pointer;
   font-size: 0.9rem;
+}
+
+.release-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.release-date-field__help {
+  color: var(--nf-text-muted);
+  font-size: 0.75rem;
+}
+
+.release-date-field__error {
+  color: var(--nf-danger-soft);
+  font-size: 0.75rem;
 }
 
 .metadata-suggestion-item:hover,

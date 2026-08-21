@@ -31,9 +31,16 @@ export type CanonicalTitle = {
   displayValue: string;
 };
 
+export type CanonicalAlbum = {
+  key: string;
+  displayValue: string;
+};
+
 export type MetadataIndex = {
   artists: CanonicalArtist[];
   titlesByArtist: ReadonlyMap<string, CanonicalTitle[]>;
+  albumsByArtist: ReadonlyMap<string, CanonicalAlbum[]>;
+  albums: CanonicalAlbum[];
 };
 
 type DisplayStat = {
@@ -91,12 +98,41 @@ export function buildMetadataIndex(tracks: readonly Track[]): MetadataIndex {
   // and Artist autocomplete using the same canonical Artist display rules.
   const filterOptions = buildTrackFilterOptions(tracks);
   const titlesByArtist = new Map<string, Map<string, TitleStat>>();
+  const albumsByArtist = new Map<string, Map<string, DisplayStat>>();
+  const globalAlbumStats = new Map<string, DisplayStat>();
 
   for (const track of tracks) {
     const artist = normalizeMetadataValue(track.artist ?? '');
-    if (!artist) continue;
-
     const artistKey = metadataValueKey(artist);
+
+    const album = normalizeMetadataValue(track.album ?? '');
+    if (album) {
+      const albumKey = metadataValueKey(album);
+
+      const existingGlobal = globalAlbumStats.get(albumKey);
+      if (!existingGlobal) {
+        globalAlbumStats.set(albumKey, { displayValue: album, count: 1 });
+      } else {
+        existingGlobal.count += 1;
+      }
+
+      if (artistKey) {
+        let artistAlbums = albumsByArtist.get(artistKey);
+        if (!artistAlbums) {
+          artistAlbums = new Map();
+          albumsByArtist.set(artistKey, artistAlbums);
+        }
+
+        let albumDisplay = artistAlbums.get(albumKey);
+        if (!albumDisplay) {
+          albumDisplay = { displayValue: album, count: 0 };
+          artistAlbums.set(albumKey, albumDisplay);
+        }
+        albumDisplay.count += 1;
+      }
+    }
+
+    if (!artist) continue;
 
     const title = normalizeMetadataValue(track.title);
     if (!title) continue;
@@ -138,9 +174,30 @@ export function buildMetadataIndex(tracks: readonly Track[]): MetadataIndex {
     titlesByArtistMap.set(artistKey, titles);
   }
 
+  const albumsByArtistMap = new Map<string, CanonicalAlbum[]>();
+
+  for (const [artistKey, albumStats] of albumsByArtist) {
+    const albums = [...albumStats.entries()]
+      .map(([albumKey, stat]) => ({
+        key: albumKey,
+        displayValue: chooseCanonicalDisplayValue(new Map([[stat.displayValue, stat]])),
+      }))
+      .sort((left, right) => left.displayValue.localeCompare(right.displayValue));
+    albumsByArtistMap.set(artistKey, albums);
+  }
+
+  const albums = [...globalAlbumStats.entries()]
+    .map(([albumKey, stat]) => ({
+      key: albumKey,
+      displayValue: chooseCanonicalDisplayValue(new Map([[stat.displayValue, stat]])),
+    }))
+    .sort((left, right) => left.displayValue.localeCompare(right.displayValue));
+
   return {
     artists,
     titlesByArtist: titlesByArtistMap,
+    albumsByArtist: albumsByArtistMap,
+    albums,
   };
 }
 
@@ -201,6 +258,41 @@ export function getTitleSuggestionsForArtist(
   return rankedValues
     .map((value) => byDisplayValue.get(value))
     .filter((title): title is CanonicalTitle => Boolean(title));
+}
+
+export function getAlbumsForArtist(index: MetadataIndex, artistValue: string): CanonicalAlbum[] {
+  const key = metadataValueKey(artistValue);
+  if (!key) return index.albums;
+
+  const artistAlbums = index.albumsByArtist.get(key);
+  return artistAlbums && artistAlbums.length > 0 ? artistAlbums : index.albums;
+}
+
+export function getAlbumDisplayValues(index: MetadataIndex, artistValue?: string): string[] {
+  return getAlbumsForArtist(index, artistValue ?? '').map((album) => album.displayValue);
+}
+
+export function getAlbumSuggestions(
+  index: MetadataIndex,
+  artistValue: string,
+  query: string,
+  limit = 12,
+): CanonicalAlbum[] {
+  const albums = getAlbumsForArtist(index, artistValue);
+  if (albums.length === 0) return [];
+
+  const queryKey = metadataValueKey(query);
+  if (!queryKey) return albums.slice(0, limit);
+
+  const displayValues = albums.map((album) => album.displayValue);
+  const rankedValues = rankSuggestions(queryKey, displayValues, undefined, limit).map(
+    (entry) => entry.value,
+  );
+  const byDisplayValue = new Map(albums.map((album) => [album.displayValue, album]));
+
+  return rankedValues
+    .map((value) => byDisplayValue.get(value))
+    .filter((album): album is CanonicalAlbum => Boolean(album));
 }
 
 export function getCanonicalArtistDisplayValue(index: MetadataIndex, artistValue: string): string {

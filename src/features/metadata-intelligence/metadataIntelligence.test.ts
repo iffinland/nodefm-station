@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Track } from '../../types/domain';
 import {
   buildMetadataIndex,
+  getAlbumDisplayValues,
+  getAlbumSuggestions,
+  getAlbumsForArtist,
   getArtistDisplayValues,
   getArtistSuggestions,
   getArtistTitles,
@@ -12,13 +15,21 @@ import {
   normalizeMetadataValue,
 } from './metadataIntelligence';
 
-function makeTrack(trackId: string, title: string, artist?: string): Track {
+function makeTrack(
+  trackId: string,
+  title: string,
+  artist?: string,
+  album?: string,
+  releaseDate?: string,
+): Track {
   return {
     schemaVersion: 1,
     trackId,
     ownerAddress: 'owner',
     title,
     artist,
+    album,
+    releaseDate,
     audio: { service: 'AUDIO', name: 'Station', identifier: `audio-${trackId}` },
     durationMs: 1000,
     source: 'station-upload',
@@ -117,5 +128,55 @@ describe('artist-aware title index', () => {
 
     expect(pinkFloydTitles).toEqual(['Comfortably Numb', 'Eclipse', 'Time']);
     expect(parsonsTitles).toEqual(['Time']);
+  });
+});
+
+describe('artist-aware album index', () => {
+  const tracks = [
+    makeTrack('1', 'Time', 'Pink Floyd', 'The Dark Side of the Moon', '1973-03-01'),
+    makeTrack('2', 'Money', 'Pink Floyd', 'The Dark Side of the Moon', '1973-03-01'),
+    makeTrack('3', 'The Wall', 'Pink Floyd', 'The Wall', '1979-11-30'),
+    makeTrack('4', 'Time', 'The Alan Parsons Project', 'The Turn of a Friendly Card', '1980'),
+  ];
+
+  it('suggests existing albums for the selected artist without rewriting stored values', () => {
+    const index = buildMetadataIndex(tracks);
+
+    expect(getAlbumDisplayValues(index, 'pink floyd')).toContain('The Dark Side of the Moon');
+    expect(getAlbumDisplayValues(index, 'pink floyd')).toContain('The Wall');
+    expect(getAlbumDisplayValues(index, 'The Alan Parsons Project')).toContain(
+      'The Turn of a Friendly Card',
+    );
+    expect(
+      getAlbumSuggestions(index, 'pink floyd', 'dark').map((album) => album.displayValue),
+    ).toEqual(['The Dark Side of the Moon']);
+  });
+
+  it('keeps artist-album association distinct and falls back to the global vocabulary', () => {
+    const index = buildMetadataIndex(tracks);
+
+    expect(getAlbumsForArtist(index, 'pink floyd').map((album) => album.displayValue)).not.toEqual(
+      getAlbumsForArtist(index, 'The Alan Parsons Project').map((album) => album.displayValue),
+    );
+    expect(getAlbumDisplayValues(index)).toContain('The Wall');
+  });
+
+  it('allows a new free-text album without silently changing it', () => {
+    const index = buildMetadataIndex(tracks);
+    const input = '  A Brand New Album  ';
+
+    expect(getAlbumSuggestions(index, 'Unknown Artist', input)).toEqual([]);
+    expect(input).toBe('  A Brand New Album  ');
+  });
+
+  it('still suggests an album found on a track without an artist', () => {
+    const index = buildMetadataIndex([
+      makeTrack('5', 'Unknown Song', undefined, 'Mystery Compilation'),
+    ]);
+
+    expect(getAlbumDisplayValues(index)).toContain('Mystery Compilation');
+    expect(getAlbumSuggestions(index, '', 'mystery').map((album) => album.displayValue)).toEqual([
+      'Mystery Compilation',
+    ]);
   });
 });

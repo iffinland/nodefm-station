@@ -79,6 +79,29 @@ describe('listener submission domain model', () => {
     );
   });
 
+  it('preserves optional Album and Release date through serialization', () => {
+    const submission = createListenerTrackSubmission(
+      validInput({
+        album: 'The Dark Side of the Moon',
+        releaseDate: '1973-03-01',
+      }),
+    );
+
+    expect(submission.album).toBe('The Dark Side of the Moon');
+    expect(submission.releaseDate).toBe('1973-03-01');
+    expect(deserializeSubmissionFromQdn(JSON.parse(JSON.stringify(submission)))).toEqual(
+      submission,
+    );
+  });
+
+  it('rejects an invalid Release date and keeps the fields optional', () => {
+    expect(() => createListenerTrackSubmission(validInput({ releaseDate: '2023-02-30' }))).toThrow(
+      /release date/i,
+    );
+    expect(createListenerTrackSubmission(validInput()).album).toBeUndefined();
+    expect(createListenerTrackSubmission(validInput()).releaseDate).toBeUndefined();
+  });
+
   it('rejects a submission with an invalid duration on deserialization', () => {
     const submission = createListenerTrackSubmission(validInput());
     expect(

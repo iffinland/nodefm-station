@@ -21,6 +21,8 @@ export function TrackDetailModal({ track, onClose }: TrackDetailModalProps) {
   const detail = getTrackDetailPresentation(track);
   const hasGenres = detail.genres.length > 0;
   const hasTags = detail.tags.length > 0;
+  const hasAlbum = detail.album.length > 0;
+  const hasReleaseDate = detail.releaseDate.length > 0;
 
   return (
     <Modal title="Track Details" onClose={onClose}>
@@ -48,6 +50,18 @@ export function TrackDetailModal({ track, onClose }: TrackDetailModalProps) {
         </div>
 
         <dl className="track-detail__facts">
+          {hasAlbum ? (
+            <div className="track-detail__fact">
+              <dt>Album</dt>
+              <dd>{detail.album}</dd>
+            </div>
+          ) : null}
+          {hasReleaseDate ? (
+            <div className="track-detail__fact">
+              <dt>Release date</dt>
+              <dd>{detail.releaseDate}</dd>
+            </div>
+          ) : null}
           <div className="track-detail__fact">
             <dt>Genres</dt>
             <dd>{hasGenres ? detail.genres.join(', ') : 'Not provided'}</dd>

@@ -29,6 +29,8 @@ describe('track detail presentation', () => {
     expect(detail).toEqual({
       title: 'Time',
       artist: 'Pink Floyd',
+      album: '',
+      releaseDate: '',
       description: 'A classic track',
       genres: ['Progressive Rock', 'Classic Rock'],
       tags: ['#70s', '#classic'],
@@ -51,6 +53,27 @@ describe('track detail presentation', () => {
     expect(detail.description).toBe('');
     expect(detail.genres).toEqual([]);
     expect(detail.tags).toEqual([]);
+  });
+
+  it('exposes Album and Release date only when present', () => {
+    expect(
+      getTrackDetailPresentation(
+        makeTrack({
+          album: 'The Dark Side of the Moon',
+          releaseDate: '1973-03-01',
+        }),
+      ),
+    ).toMatchObject({
+      album: 'The Dark Side of the Moon',
+      releaseDate: '1973-03-01',
+    });
+
+    expect(
+      getTrackDetailPresentation(makeTrack({ album: undefined, releaseDate: undefined })),
+    ).toMatchObject({
+      album: '',
+      releaseDate: '',
+    });
   });
 
   it('labels station uploads and QDN sources understandably', () => {

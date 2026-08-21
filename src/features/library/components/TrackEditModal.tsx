@@ -10,7 +10,13 @@ import type { Track } from '../../../types/domain';
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
-import { ArtistInput, TitleInput } from '../../metadata-intelligence';
+import {
+  AlbumInput,
+  ArtistInput,
+  ReleaseDateInput,
+  TitleInput,
+  isValidReleaseDateValue,
+} from '../../metadata-intelligence';
 import { TrackCover } from './TrackCover';
 import { publishAndUpdateTrackCover, readCoverFile } from '../services/coverService';
 
@@ -25,6 +31,8 @@ export function TrackEditModal({ track, onClose }: Props) {
   const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
   const [title, setTitle] = useState(track.title);
   const [artist, setArtist] = useState(track.artist ?? '');
+  const [album, setAlbum] = useState(track.album ?? '');
+  const [releaseDate, setReleaseDate] = useState(track.releaseDate ?? '');
   const [description, setDescription] = useState(track.description ?? '');
   const [genres, setGenres] = useState(track.genres?.join(', ') ?? '');
   const [tags, setTags] = useState(track.tags?.join(', ') ?? '');
@@ -62,6 +70,10 @@ export function TrackEditModal({ track, onClose }: Props) {
     setError(null);
 
     try {
+      if (releaseDate.trim() && !isValidReleaseDateValue(releaseDate)) {
+        throw new Error('Release date must use YYYY, YYYY-MM, or YYYY-MM-DD.');
+      }
+
       const shouldRemoveCover = removeCover && !coverFile;
 
       if (coverFile) {
@@ -84,6 +96,8 @@ export function TrackEditModal({ track, onClose }: Props) {
             metadata: {
               title: title || track.title,
               artist: artist || undefined,
+              album: album || undefined,
+              releaseDate: releaseDate || undefined,
               description: description || undefined,
               genres: genres.trim()
                 ? getCanonicalTaxonomyValues(genres, genreSuggestions)
@@ -104,6 +118,8 @@ export function TrackEditModal({ track, onClose }: Props) {
         await editTrack(track.trackId, {
           title: title || track.title,
           artist: artist || undefined,
+          album: album || undefined,
+          releaseDate: releaseDate || undefined,
           description: description || undefined,
           genres: genres.trim() ? getCanonicalTaxonomyValues(genres, genreSuggestions) : undefined,
           tags: tags.trim() ? getCanonicalTaxonomyValues(tags, tagSuggestions) : undefined,
@@ -130,6 +146,16 @@ export function TrackEditModal({ track, onClose }: Props) {
       <label className="form-field">
         Artist
         <ArtistInput value={artist} onChange={setArtist} />
+      </label>
+
+      <label className="form-field">
+        Album
+        <AlbumInput value={album} onChange={setAlbum} artistValue={artist} />
+      </label>
+
+      <label className="form-field">
+        Release date
+        <ReleaseDateInput value={releaseDate} onChange={setReleaseDate} />
       </label>
 
       <label className="form-field">

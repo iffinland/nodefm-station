@@ -61,6 +61,8 @@ export type Track = {
 
   title: string;
   artist?: string;
+  album?: string;
+  releaseDate?: string;
   description?: string;
 
   audio: QdnResourceRef;
@@ -299,6 +301,8 @@ export type ListenerTrackSubmission = {
 
   title: string;
   artist?: string;
+  album?: string;
+  releaseDate?: string;
   description?: string;
 
   audio: QdnResourceRef;

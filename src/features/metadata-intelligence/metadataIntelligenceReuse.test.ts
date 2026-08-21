@@ -24,6 +24,8 @@ describe('metadata intelligence reuse surfaces', () => {
       expect(source).toContain("from '../../metadata-intelligence'");
       expect(source).toContain('<ArtistInput');
       expect(source).toContain('<TitleInput');
+      expect(source).toContain('<AlbumInput');
+      expect(source).toContain('<ReleaseDateInput');
     }
   });
 
@@ -34,6 +36,9 @@ describe('metadata intelligence reuse surfaces', () => {
       expect(source).not.toContain('BulkArtistAutocomplete');
       expect(source).not.toContain('AdminTitleAutocomplete');
       expect(source).not.toContain('ListenerTitleAutocomplete');
+      expect(source).not.toContain('AdminAlbumAutocomplete');
+      expect(source).not.toContain('ListenerAlbumAutocomplete');
+      expect(source).not.toContain('BulkAlbumAutocomplete');
     }
   });
 });

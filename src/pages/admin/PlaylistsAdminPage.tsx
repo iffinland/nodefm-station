@@ -5,8 +5,8 @@
  * Phase 2: create, list, navigate to editor.
  * ============================================================ */
 
-import { useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useCallback, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
@@ -14,6 +14,8 @@ import { usePlaylists } from '../../hooks/usePlaylists';
 import { useStationIdentity } from '../../features/station';
 
 export default function PlaylistsAdminPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const playlistAction = searchParams.get('action');
   const { playlists, loaded, loading, error, incomplete, diagnostics, createPlaylist, refresh } =
     usePlaylists();
   const { ownerAddress } = useStationIdentity();
@@ -24,6 +26,20 @@ export default function PlaylistsAdminPage() {
   const [newVisibility, setNewVisibility] = useState<'public' | 'private'>('private');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (playlistAction === 'create') {
+      setShowCreate(true);
+    }
+  }, [playlistAction]);
+
+  const clearPlaylistAction = useCallback(() => {
+    if (searchParams.has('action')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const handleCreate = useCallback(async () => {
     if (!newTitle.trim() || !ownerAddress) return;
@@ -42,12 +58,13 @@ export default function PlaylistsAdminPage() {
       setNewTitle('');
       setNewDescription('');
       setNewVisibility('private');
+      clearPlaylistAction();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create playlist.');
     } finally {
       setCreating(false);
     }
-  }, [newTitle, newDescription, newVisibility, ownerAddress, createPlaylist]);
+  }, [newTitle, newDescription, newVisibility, ownerAddress, createPlaylist, clearPlaylistAction]);
 
   if (loading && !loaded) {
     return (
@@ -126,7 +143,10 @@ export default function PlaylistsAdminPage() {
               <button
                 className="button button--secondary"
                 type="button"
-                onClick={() => setShowCreate(false)}
+                onClick={() => {
+                  setShowCreate(false);
+                  clearPlaylistAction();
+                }}
               >
                 Cancel
               </button>

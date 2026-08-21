@@ -52,6 +52,22 @@ describe('buildAddQdnTrackInput', () => {
     expect(track.cover).toBeUndefined();
   });
 
+  it('carries optional Album and Release date metadata', () => {
+    const track = createTrack(
+      buildAddQdnTrackInput({
+        title: 'Track',
+        album: 'An Album',
+        releaseDate: '1991-08',
+        audio: externalAudio,
+        durationMs: 1000,
+        ownerAddress: 'owner',
+      }),
+    );
+
+    expect(track.album).toBe('An Album');
+    expect(track.releaseDate).toBe('1991-08');
+  });
+
   it('enforces the QDN tag count and length limits at the domain boundary', () => {
     expect(() =>
       createTrack(

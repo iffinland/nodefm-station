@@ -26,7 +26,13 @@ import {
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
-import { ArtistInput, TitleInput } from '../../metadata-intelligence';
+import {
+  AlbumInput,
+  ArtistInput,
+  ReleaseDateInput,
+  TitleInput,
+  isValidReleaseDateValue,
+} from '../../metadata-intelligence';
 import { publishTrackCoverImage, readCoverFile } from '../services/coverService';
 import { resolveAudioDurationFromUrl } from '../../../utils/duration';
 import { getAudioQdnIdentifier } from '../../tracks/services/trackService';
@@ -40,6 +46,8 @@ type UploadState = {
   durationMs: number | null;
   title: string;
   artist: string;
+  album: string;
+  releaseDate: string;
   description: string;
   genres: string;
   tags: string;
@@ -67,6 +75,8 @@ export function UploadFlow({
     durationMs: null,
     title: '',
     artist: '',
+    album: '',
+    releaseDate: '',
     description: '',
     genres: '',
     tags: '',
@@ -126,6 +136,14 @@ export function UploadFlow({
 
   const handlePublish = useCallback(async () => {
     if (!state.audioSource || state.audioSource.canceled || !ownerAddress || !publisherName) return;
+
+    if (state.releaseDate.trim() && !isValidReleaseDateValue(state.releaseDate)) {
+      setState((s) => ({
+        ...s,
+        error: 'Release date must use YYYY, YYYY-MM, or YYYY-MM-DD.',
+      }));
+      return;
+    }
 
     // Block if no registered Qortium name
     if (!publisherName) {
@@ -223,6 +241,8 @@ export function UploadFlow({
       await createTrack({
         title: state.title || state.audioSource.fileName.replace(/\.[^/.]+$/, ''),
         artist: state.artist || undefined,
+        album: state.album || undefined,
+        releaseDate: state.releaseDate || undefined,
         description: state.description || undefined,
         audio: {
           service: 'AUDIO',
@@ -256,6 +276,8 @@ export function UploadFlow({
     state.audioSource,
     state.title,
     state.artist,
+    state.album,
+    state.releaseDate,
     state.description,
     state.genres,
     state.tags,
@@ -319,6 +341,25 @@ export function UploadFlow({
               value={state.artist}
               onChange={(value) => setState((s) => ({ ...s, artist: value }))}
               placeholder="Artist name"
+            />
+          </label>
+
+          <label className="form-field">
+            Album
+            <AlbumInput
+              value={state.album}
+              onChange={(value) => setState((s) => ({ ...s, album: value }))}
+              artistValue={state.artist}
+              placeholder="Optional album name"
+            />
+          </label>
+
+          <label className="form-field">
+            Release date
+            <ReleaseDateInput
+              value={state.releaseDate}
+              onChange={(value) => setState((s) => ({ ...s, releaseDate: value }))}
+              placeholder="1991-08-12"
             />
           </label>
 
@@ -425,6 +466,8 @@ export function UploadFlow({
                   durationMs: null,
                   title: '',
                   artist: '',
+                  album: '',
+                  releaseDate: '',
                   description: '',
                   genres: '',
                   tags: '',

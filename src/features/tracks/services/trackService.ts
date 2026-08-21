@@ -10,6 +10,10 @@ import { generateId } from '../../../utils/id';
 import { isValidDurationMs, isScheduleEligibleDuration } from '../../../utils/duration';
 import { isRecord } from '../../../utils/record';
 import { isNonEmptyTrimmedString } from '../../../utils/validation';
+import {
+  isValidReleaseDateValue,
+  normalizeReleaseDateInput,
+} from '../../metadata-intelligence/releaseDate';
 
 const MAX_TRACK_TAXONOMY_VALUES = 5;
 const MAX_TRACK_TAXONOMY_VALUE_LENGTH = 20;
@@ -54,6 +58,8 @@ export type CreateTrackInput = {
   trackId?: string;
   title: string;
   artist?: string;
+  album?: string;
+  releaseDate?: string;
   description?: string;
   audio: QdnResourceRef;
   cover?: QdnResourceRef;
@@ -83,6 +89,21 @@ export function createTrack(input: CreateTrackInput): Track {
     throw new Error('Track title must be a non-empty string.');
   }
 
+  if (input.album !== undefined && typeof input.album !== 'string') {
+    throw new Error('Track album must be a string.');
+  }
+
+  if (input.releaseDate !== undefined) {
+    if (typeof input.releaseDate !== 'string') {
+      throw new Error('Track release date must be a string.');
+    }
+
+    const releaseDate = normalizeReleaseDateInput(input.releaseDate);
+    if (releaseDate && !isValidReleaseDateValue(releaseDate)) {
+      throw new Error('Track release date must use YYYY, YYYY-MM, or YYYY-MM-DD.');
+    }
+  }
+
   if (!isValidQdnResourceRef(input.audio)) {
     throw new Error('Track audio must be a valid QDN resource reference.');
   }
@@ -97,6 +118,11 @@ export function createTrack(input: CreateTrackInput): Track {
 
   const genres = normalizeTrackTaxonomyValues(input.genres, 'Track genres');
   const tags = normalizeTrackTaxonomyValues(input.tags, 'Track tags');
+  const album = input.album !== undefined && input.album.trim() ? input.album.trim() : undefined;
+  const releaseDate =
+    input.releaseDate !== undefined && normalizeReleaseDateInput(input.releaseDate)
+      ? normalizeReleaseDateInput(input.releaseDate)
+      : undefined;
 
   const now = new Date().toISOString();
 
@@ -106,6 +132,8 @@ export function createTrack(input: CreateTrackInput): Track {
     ownerAddress: input.ownerAddress,
     title: input.title.trim(),
     artist: input.artist,
+    album,
+    releaseDate,
     description: input.description,
     audio: input.audio,
     cover: input.cover,
@@ -123,7 +151,10 @@ export function createTrack(input: CreateTrackInput): Track {
 // ── Track Editing ───────────────────────────────────────────────────
 
 export type EditTrackInput = Partial<
-  Pick<Track, 'title' | 'artist' | 'description' | 'genres' | 'tags' | 'cover'>
+  Pick<
+    Track,
+    'title' | 'artist' | 'album' | 'releaseDate' | 'description' | 'genres' | 'tags' | 'cover'
+  >
 > & {
   /**
    * When true, the track cover reference is explicitly removed. This is
@@ -146,15 +177,40 @@ export function editTrack(track: Track, input: EditTrackInput): Track {
     throw new Error('Track cover must be a valid QDN resource reference.');
   }
 
+  if (input.album !== undefined && typeof input.album !== 'string') {
+    throw new Error('Track album must be a string.');
+  }
+
+  if (input.releaseDate !== undefined) {
+    if (typeof input.releaseDate !== 'string') {
+      throw new Error('Track release date must be a string.');
+    }
+
+    const releaseDate = normalizeReleaseDateInput(input.releaseDate);
+    if (releaseDate && !isValidReleaseDateValue(releaseDate)) {
+      throw new Error('Track release date must use YYYY, YYYY-MM, or YYYY-MM-DD.');
+    }
+  }
+
   const genres = normalizeTrackTaxonomyValues(input.genres, 'Track genres');
   const tags = normalizeTrackTaxonomyValues(input.tags, 'Track tags');
   const cover =
     input.removeCover === true ? undefined : input.cover !== undefined ? input.cover : track.cover;
+  const album =
+    input.album !== undefined ? (input.album.trim() ? input.album.trim() : undefined) : track.album;
+  const releaseDate =
+    input.releaseDate !== undefined
+      ? normalizeReleaseDateInput(input.releaseDate)
+        ? normalizeReleaseDateInput(input.releaseDate)
+        : undefined
+      : track.releaseDate;
 
   return {
     ...track,
     title: input.title !== undefined ? input.title.trim() : track.title,
     artist: input.artist !== undefined ? input.artist : track.artist,
+    album,
+    releaseDate,
     description: input.description !== undefined ? input.description : track.description,
     cover,
     genres: input.genres !== undefined ? genres : track.genres,
@@ -227,7 +283,11 @@ export function deserializeTrackFromQdn(value: unknown): Track | null {
     typeof parsed.trackId !== 'string' ||
     !isNonEmptyTrimmedString(parsed.title) ||
     !isValidQdnResourceRef(parsed.audio) ||
-    !isValidDurationMs(parsed.durationMs)
+    !isValidDurationMs(parsed.durationMs) ||
+    (parsed.album !== undefined && typeof parsed.album !== 'string') ||
+    (parsed.releaseDate !== undefined &&
+      (typeof parsed.releaseDate !== 'string' ||
+        (parsed.releaseDate.trim() !== '' && !isValidReleaseDateValue(parsed.releaseDate))))
   ) {
     return null;
   }

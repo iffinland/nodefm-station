@@ -5,7 +5,8 @@
  * Phase 2: upload, add QDN, edit, delete, status display.
  * ============================================================ */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
@@ -27,6 +28,8 @@ import {
 type LibraryTab = 'library' | 'uploads';
 
 export default function LibraryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const libraryAction = searchParams.get('action');
   const { tracks, loaded, loading, error, incomplete, diagnostics, removeTrack, refresh } =
     useLibrary();
   const trackFiltering = useTrackFiltering(tracks);
@@ -36,13 +39,43 @@ export default function LibraryPage() {
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (libraryAction === 'upload') {
+      setShowUpload(true);
+      setShowAddQdn(false);
+    } else if (libraryAction === 'add-qdn') {
+      setShowAddQdn(true);
+      setShowUpload(false);
+    }
+  }, [libraryAction]);
+
+  const clearLibraryAction = useCallback(() => {
+    if (searchParams.has('action')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const handleUploadComplete = useCallback(() => {
     setShowUpload(false);
-  }, []);
+    clearLibraryAction();
+  }, [clearLibraryAction]);
+
+  const handleUploadClose = useCallback(() => {
+    setShowUpload(false);
+    clearLibraryAction();
+  }, [clearLibraryAction]);
+
+  const handleAddQdnClose = useCallback(() => {
+    setShowAddQdn(false);
+    clearLibraryAction();
+  }, [clearLibraryAction]);
 
   const handleAddQdnComplete = useCallback(() => {
     setShowAddQdn(false);
-  }, []);
+    clearLibraryAction();
+  }, [clearLibraryAction]);
 
   const handleDeleteTrack = useCallback(
     async (trackId: string, title: string) => {
@@ -174,13 +207,9 @@ export default function LibraryPage() {
         )}
       </div>
 
-      {showUpload && (
-        <UploadFlow onClose={() => setShowUpload(false)} onComplete={handleUploadComplete} />
-      )}
+      {showUpload && <UploadFlow onClose={handleUploadClose} onComplete={handleUploadComplete} />}
 
-      {showAddQdn && (
-        <AddQdnFlow onClose={() => setShowAddQdn(false)} onComplete={handleAddQdnComplete} />
-      )}
+      {showAddQdn && <AddQdnFlow onClose={handleAddQdnClose} onComplete={handleAddQdnComplete} />}
 
       {editingTrack && (
         <TrackEditModal track={editingTrack} onClose={() => setEditingTrack(null)} />

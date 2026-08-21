@@ -31,6 +31,10 @@ import { isConfirmedQdnNotFoundError } from '../../../qortium/qdnReadError';
 import { addTrackToLibrary, getTrackById } from '../../library/services/libraryService';
 import { createTrack } from '../../tracks/services/trackService';
 import {
+  isValidReleaseDateValue,
+  normalizeReleaseDateInput,
+} from '../../metadata-intelligence/releaseDate';
+import {
   SUBMISSION_IDENTIFIER_PREFIX,
   SUBMISSION_QDN_SERVICE,
   createListenerTrackSubmission,
@@ -77,6 +81,8 @@ export type SubmissionPublishInput = {
   submitterAddress: string;
   title: string;
   artist?: string;
+  album?: string;
+  releaseDate?: string;
   description?: string;
   genres?: string[];
   tags?: string[];
@@ -263,6 +269,30 @@ export async function publishListenerSubmission(
     };
   }
 
+  if (input.album !== undefined && typeof input.album !== 'string') {
+    return {
+      status: 'failed',
+      reason: 'Submission album must be a string.',
+    };
+  }
+
+  if (input.releaseDate !== undefined) {
+    if (typeof input.releaseDate !== 'string') {
+      return {
+        status: 'failed',
+        reason: 'Submission release date must be a string.',
+      };
+    }
+
+    const releaseDate = normalizeReleaseDateInput(input.releaseDate);
+    if (releaseDate && !isValidReleaseDateValue(releaseDate)) {
+      return {
+        status: 'failed',
+        reason: 'Submission release date must use YYYY, YYYY-MM, or YYYY-MM-DD.',
+      };
+    }
+  }
+
   if (
     input.genres !== undefined &&
     (!Array.isArray(input.genres) || input.genres.some((entry) => !entry.trim()))
@@ -378,6 +408,8 @@ export async function publishListenerSubmission(
     submitterAddress: input.submitterAddress.trim(),
     title: input.title,
     artist: input.artist,
+    album: input.album,
+    releaseDate: input.releaseDate,
     description: input.description,
     audio: audioRef,
     cover: coverRef,
@@ -798,6 +830,8 @@ export async function acceptSubmission(
     trackId,
     title: submission.title,
     artist: submission.artist,
+    album: submission.album,
+    releaseDate: submission.releaseDate,
     description: submission.description,
     audio: submission.audio,
     cover: submission.cover,

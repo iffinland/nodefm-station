@@ -16,7 +16,13 @@ import { generateId } from '../../../utils/id';
 import type { ListenerTrackSubmission, QdnResourceRef } from '../../../types/domain';
 import { publishListenerSubmission, publishSubmissionMetadata } from '../services/submissionStore';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
-import { ArtistInput, TitleInput } from '../../metadata-intelligence';
+import {
+  AlbumInput,
+  ArtistInput,
+  ReleaseDateInput,
+  TitleInput,
+  isValidReleaseDateValue,
+} from '../../metadata-intelligence';
 
 const COVER_INLINE_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -27,6 +33,8 @@ type FormState = {
   audioSource: Exclude<SelectPublishSourceResult, { canceled: true }> | null;
   title: string;
   artist: string;
+  album: string;
+  releaseDate: string;
   description: string;
   genres: string;
   tags: string;
@@ -45,6 +53,8 @@ function initialFormState(overrides: Partial<FormState> = {}): FormState {
     audioSource: null,
     title: '',
     artist: '',
+    album: '',
+    releaseDate: '',
     description: '',
     genres: '',
     tags: '',
@@ -168,6 +178,14 @@ export function SubmitMusicForm() {
       return;
     }
 
+    if (state.releaseDate.trim() && !isValidReleaseDateValue(state.releaseDate)) {
+      setState((current) => ({
+        ...current,
+        error: 'Release date must use YYYY, YYYY-MM, or YYYY-MM-DD.',
+      }));
+      return;
+    }
+
     setState((current) => ({ ...current, step: 'publishing', error: null }));
 
     const genres = state.genres.trim()
@@ -183,6 +201,8 @@ export function SubmitMusicForm() {
       submitterAddress,
       title: state.title,
       artist: state.artist || undefined,
+      album: state.album || undefined,
+      releaseDate: state.releaseDate || undefined,
       description: state.description || undefined,
       genres,
       tags,
@@ -230,6 +250,8 @@ export function SubmitMusicForm() {
     setState((current) => ({ ...current, step: 'error', error: result.reason }));
   }, [
     state.artist,
+    state.album,
+    state.releaseDate,
     state.audioSource,
     state.coverBase64,
     state.coverFile,
@@ -409,6 +431,25 @@ export function SubmitMusicForm() {
           value={state.artist}
           onChange={(value) => setState((current) => ({ ...current, artist: value }))}
           placeholder="Artist name"
+        />
+      </label>
+
+      <label className="form-field">
+        Album
+        <AlbumInput
+          value={state.album}
+          onChange={(value) => setState((current) => ({ ...current, album: value }))}
+          artistValue={state.artist}
+          placeholder="Optional album name"
+        />
+      </label>
+
+      <label className="form-field">
+        Release date
+        <ReleaseDateInput
+          value={state.releaseDate}
+          onChange={(value) => setState((current) => ({ ...current, releaseDate: value }))}
+          placeholder="1991-08-12"
         />
       </label>
 

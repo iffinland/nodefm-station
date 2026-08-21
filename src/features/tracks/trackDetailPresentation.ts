@@ -14,6 +14,8 @@ import { formatTrackTagLabel, getTrackMetadataLineParts } from './trackPresentat
 export type TrackDetailPresentation = {
   title: string;
   artist: string;
+  album: string;
+  releaseDate: string;
   description: string;
   genres: string[];
   tags: string[];
@@ -32,6 +34,8 @@ export function getTrackDetailPresentation(track: Track): TrackDetailPresentatio
   return {
     title: track.title.trim(),
     artist: track.artist?.trim() ?? '',
+    album: track.album?.trim() ?? '',
+    releaseDate: track.releaseDate?.trim() ?? '',
     description: track.description?.trim() ?? '',
     genres: metadata.genres,
     tags: metadata.tags.map((tag) => formatTrackTagLabel(tag)).filter(Boolean),

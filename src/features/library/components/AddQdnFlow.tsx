@@ -17,7 +17,13 @@ import {
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
-import { ArtistInput, TitleInput } from '../../metadata-intelligence';
+import {
+  AlbumInput,
+  ArtistInput,
+  ReleaseDateInput,
+  TitleInput,
+  isValidReleaseDateValue,
+} from '../../metadata-intelligence';
 import { publishTrackCoverImage, readCoverFile } from '../services/coverService';
 import { buildAddQdnTrackInput } from '../services/addQdnService';
 import {
@@ -40,6 +46,8 @@ type State = {
   durationResolving: boolean;
   title: string;
   artist: string;
+  album: string;
+  releaseDate: string;
   description: string;
   genres: string;
   tags: string;
@@ -71,6 +79,8 @@ export function AddQdnFlow({
     durationResolving: false,
     title: '',
     artist: '',
+    album: '',
+    releaseDate: '',
     description: '',
     genres: '',
     tags: '',
@@ -112,6 +122,8 @@ export function AddQdnFlow({
       durationResolving: true,
       title: resource.metadata?.title ?? resource.name ?? '',
       artist: '',
+      album: '',
+      releaseDate: '',
       durationMs: null,
       coverFile: null,
       coverData64: null,
@@ -160,6 +172,15 @@ export function AddQdnFlow({
   const handleImport = useCallback(async () => {
     if (!state.selected || !ownerAddress) return;
 
+    if (state.releaseDate.trim() && !isValidReleaseDateValue(state.releaseDate)) {
+      setState((s) => ({
+        ...s,
+        step: 'error',
+        error: 'Release date must use YYYY, YYYY-MM, or YYYY-MM-DD.',
+      }));
+      return;
+    }
+
     if (state.durationMs === null || !isValidDurationMs(state.durationMs)) {
       setState((s) => ({
         ...s,
@@ -202,6 +223,8 @@ export function AddQdnFlow({
         buildAddQdnTrackInput({
           title: state.title || state.selected.name || 'Untitled',
           artist: state.artist || state.selected.metadata?.title || undefined,
+          album: state.album || undefined,
+          releaseDate: state.releaseDate || undefined,
           description: state.description || undefined,
           audio: {
             service: state.selected.service,
@@ -231,6 +254,8 @@ export function AddQdnFlow({
     state.selected,
     state.title,
     state.artist,
+    state.album,
+    state.releaseDate,
     state.description,
     state.genres,
     state.tags,
@@ -369,6 +394,25 @@ export function AddQdnFlow({
             <ArtistInput
               value={state.artist}
               onChange={(value) => setState((s) => ({ ...s, artist: value }))}
+            />
+          </label>
+
+          <label className="form-field">
+            Album
+            <AlbumInput
+              value={state.album}
+              onChange={(value) => setState((s) => ({ ...s, album: value }))}
+              artistValue={state.artist}
+              placeholder="Optional album name"
+            />
+          </label>
+
+          <label className="form-field">
+            Release date
+            <ReleaseDateInput
+              value={state.releaseDate}
+              onChange={(value) => setState((s) => ({ ...s, releaseDate: value }))}
+              placeholder="1991-08-12"
             />
           </label>
 

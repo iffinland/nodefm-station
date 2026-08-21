@@ -7,6 +7,7 @@
  * ============================================================ */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
@@ -49,6 +50,8 @@ function endTimeAfterHour(hour: number): string {
 }
 
 export default function SchedulePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scheduleAction = searchParams.get('action');
   const {
     station,
     loaded: stationLoaded,
@@ -88,6 +91,38 @@ export default function SchedulePage() {
   const nowUtcMs = Date.now();
   const canAuthor = timeZoneIsValid && playlists.length > 0;
   const hasPlayablePlaylist = playlists.some((playlist) => playlist.latestVersionId);
+
+  useEffect(() => {
+    if (scheduleAction !== 'create' || modal !== null || !timeZoneIsValid || !selectedDate) {
+      return;
+    }
+
+    if (!canAuthor || !hasPlayablePlaylist) {
+      return;
+    }
+
+    setModal({
+      kind: 'create-event',
+      date: selectedDate,
+      startTime: '12:00',
+      endTime: '13:00',
+    });
+
+    if (searchParams.has('action')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    canAuthor,
+    hasPlayablePlaylist,
+    modal,
+    scheduleAction,
+    searchParams,
+    selectedDate,
+    setSearchParams,
+    timeZoneIsValid,
+  ]);
 
   const recurrenceById = useMemo(() => {
     const map = new Map<string, ScheduleRecurrence>();
@@ -251,6 +286,12 @@ export default function SchedulePage() {
         {!hasPlayablePlaylist && playlistsLoaded && (
           <p className="admin-schedule__hint">
             Publish at least one playlist version before scheduling a program.
+          </p>
+        )}
+
+        {scheduleAction === 'create' && !canAuthor && playlistsLoaded && (
+          <p className="admin-schedule__hint">
+            Schedule Playlist requires at least one playlist before a program can be created.
           </p>
         )}
 
