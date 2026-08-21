@@ -17,12 +17,19 @@ import { UploadFlow } from '../../features/library/components/UploadFlow';
 import { AddQdnFlow } from '../../features/library/components/AddQdnFlow';
 import { TrackCover } from '../../features/library/components/TrackCover';
 import { ListenerUploadsAdminPanel } from '../../features/listener-submissions/components/ListenerUploadsAdminPanel';
+import {
+  TrackFilterBar,
+  TrackMetadataLine,
+  TrackPrimaryLine,
+  useTrackFiltering,
+} from '../../features/tracks';
 
 type LibraryTab = 'library' | 'uploads';
 
 export default function LibraryPage() {
   const { tracks, loaded, loading, error, incomplete, diagnostics, removeTrack, refresh } =
     useLibrary();
+  const trackFiltering = useTrackFiltering(tracks);
   const [activeTab, setActiveTab] = useState<LibraryTab>('library');
   const [showUpload, setShowUpload] = useState(false);
   const [showAddQdn, setShowAddQdn] = useState(false);
@@ -124,10 +131,20 @@ export default function LibraryPage() {
               >
                 Add from QDN
               </button>
-              <span className="admin-library__count">
-                {tracks.length} track{tracks.length !== 1 ? 's' : ''}
-              </span>
             </div>
+
+            {tracks.length > 0 ? (
+              <TrackFilterBar
+                filters={trackFiltering.filters}
+                sort={trackFiltering.sort}
+                options={trackFiltering.options}
+                resultCount={trackFiltering.visibleTracks.length}
+                totalCount={tracks.length}
+                onFilterChange={trackFiltering.setFilter}
+                onSortChange={trackFiltering.setSort}
+                onClearFilters={trackFiltering.clearFilters}
+              />
+            ) : null}
 
             {tracks.length === 0 && incomplete ? (
               <p className="admin-library__empty">
@@ -139,9 +156,11 @@ export default function LibraryPage() {
                 No tracks in the library yet. Upload audio or add existing QDN resources to get
                 started.
               </p>
+            ) : trackFiltering.visibleTracks.length === 0 ? (
+              <p className="admin-library__empty">No tracks match the current search or filters.</p>
             ) : (
               <div className="admin-library__grid">
-                {tracks.map((track) => (
+                {trackFiltering.visibleTracks.map((track) => (
                   <TrackCard
                     key={track.trackId}
                     track={track}
@@ -191,8 +210,10 @@ function TrackCard({
       </div>
 
       <div className="track-card__info">
-        <h3 className="track-card__title">{track.title}</h3>
-        {track.artist && <p className="track-card__artist">{track.artist}</p>}
+        <h3 className="track-card__title">
+          <TrackPrimaryLine track={track} />
+        </h3>
+        <TrackMetadataLine track={track} className="track-card__taxonomy" />
         <p className="track-card__duration">{formatDurationMs(track.durationMs)}</p>
         <div className="track-card__meta">
           <span className={`track-card__source track-card__source--${track.source}`}>

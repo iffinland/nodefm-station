@@ -31,6 +31,12 @@ import {
   type PlaylistDraftTrack,
 } from '../../features/playlists/services/playlistDraftStore';
 import { findPlaylistVersionReferences } from '../../features/playlists/services/playlistVersionReferenceService';
+import {
+  TrackFilterBar,
+  TrackMetadataLine,
+  TrackPrimaryLine,
+  useTrackFiltering,
+} from '../../features/tracks';
 import type { Track, PlaylistVersionTrack } from '../../types/domain';
 import type { EditPlaylistInput } from '../../features/playlists/services/playlistService';
 
@@ -61,6 +67,7 @@ export default function PlaylistEditorPage() {
     refresh: refreshPlaylists,
   } = usePlaylists();
   const { tracks: libraryTracks, loaded: libLoaded } = useLibrary();
+  const trackFiltering = useTrackFiltering(libraryTracks);
 
   const playlist = playlistId ? getPlaylist(playlistId) : undefined;
   // `playlistStoreRevision` is a deliberate cache-buster for the store's
@@ -474,28 +481,54 @@ export default function PlaylistEditorPage() {
             {libraryTracks.length === 0 ? (
               <p>No tracks in library. Upload or add QDN audio first.</p>
             ) : (
-              <div className="playlist-editor__library-list">
-                {libraryTracks.map((track) => {
-                  const alreadyAdded = draftTracks.some((dt) => dt.trackId === track.trackId);
-                  return (
-                    <div key={track.trackId} className="playlist-editor__library-item">
-                      <span>{track.title}</span>
-                      {track.artist && (
-                        <span className="playlist-editor__library-item-artist">{track.artist}</span>
-                      )}
-                      <span>{formatDurationMs(track.durationMs)}</span>
-                      <button
-                        className="button button--secondary"
-                        type="button"
-                        onClick={() => handleAddTrack(track)}
-                        disabled={alreadyAdded}
-                      >
-                        {alreadyAdded ? 'Added' : 'Add'}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+              <>
+                <TrackFilterBar
+                  filters={trackFiltering.filters}
+                  sort={trackFiltering.sort}
+                  options={trackFiltering.options}
+                  resultCount={trackFiltering.visibleTracks.length}
+                  totalCount={libraryTracks.length}
+                  onFilterChange={trackFiltering.setFilter}
+                  onSortChange={trackFiltering.setSort}
+                  onClearFilters={trackFiltering.clearFilters}
+                />
+                {trackFiltering.visibleTracks.length === 0 ? (
+                  <p className="playlist-editor__empty">
+                    No library tracks match the current search or filters.
+                  </p>
+                ) : (
+                  <div className="playlist-editor__library-list">
+                    {trackFiltering.visibleTracks.map((track) => {
+                      const alreadyAdded = draftTracks.some((dt) => dt.trackId === track.trackId);
+                      return (
+                        <div key={track.trackId} className="playlist-editor__library-item">
+                          <div className="playlist-editor__library-item-main">
+                            <TrackPrimaryLine
+                              track={track}
+                              className="playlist-editor__library-item-title"
+                            />
+                            <TrackMetadataLine
+                              track={track}
+                              className="playlist-editor__library-item-taxonomy"
+                            />
+                          </div>
+                          <span className="playlist-editor__library-item-duration">
+                            {formatDurationMs(track.durationMs)}
+                          </span>
+                          <button
+                            className="button button--secondary"
+                            type="button"
+                            onClick={() => handleAddTrack(track)}
+                            disabled={alreadyAdded}
+                          >
+                            {alreadyAdded ? 'Added' : 'Add'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -523,8 +556,9 @@ export default function PlaylistEditorPage() {
                 </span>
                 <span className="playlist-editor__track-num">{index + 1}</span>
                 <div className="playlist-editor__track-info">
-                  <strong>{dt.title}</strong>
-                  {dt.artist && <span> — {dt.artist}</span>}
+                  <strong>
+                    <TrackPrimaryLine track={dt} />
+                  </strong>
                 </div>
                 <span className="playlist-editor__track-duration">
                   {formatDurationMs(dt.durationMs)}
