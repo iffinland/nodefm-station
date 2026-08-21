@@ -16,6 +16,7 @@ import {
   buildTrackLikeIdentifier,
   classifyInvalidTrackLikeEnvelope,
   deserializeTrackLikeEnvelopeFromQdn,
+  isTrackLikeIdentifierForPair,
   normalizeName,
   normalizeWalletAddress,
   reduceTrackLikeRecords,
@@ -236,8 +237,11 @@ async function loadLikeRecordsInternal(): Promise<void> {
 
     if (
       envelope.recordId !== metadata.identifier ||
-      buildTrackLikeIdentifier(envelope.body.targetId, envelope.body.walletAddress) !==
-        metadata.identifier
+      !isTrackLikeIdentifierForPair(
+        metadata.identifier,
+        envelope.body.targetId,
+        envelope.body.walletAddress,
+      )
     ) {
       diagnostics.push({
         code: 'IDENTIFIER_MISMATCH',

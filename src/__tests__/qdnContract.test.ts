@@ -28,6 +28,11 @@ import {
   deserializePlaylistVersionFromQdn,
 } from '../features/playlists/services/playlistService';
 import type { CreateTrackInput } from '../features/tracks/services/trackService';
+import {
+  isConfirmedQdnNotFoundError,
+  QDN_FILE_NOT_FOUND_ERROR,
+  QdnResourceReadError,
+} from '../qortium/qdnReadError';
 
 const mockedSend = vi.mocked(sendBridgeRequest);
 
@@ -162,6 +167,69 @@ describe('fetchQdnResourceData', () => {
     await expect(
       fetchQdnResourceData({ service: 'JSON', name: 'Owner', identifier: 'track-t1' }),
     ).rejects.toThrow(/malformed JSON/);
+  });
+
+  it('classifies a Core 1401 missing PUT transaction as NOT_FOUND', async () => {
+    mockedSend.mockRejectedValue(
+      new Error(
+        "QDN error 1401: Couldn't find PUT transaction for name Owner, service JSON and identifier track-t1",
+      ),
+    );
+
+    try {
+      await fetchQdnResourceData({ service: 'JSON', name: 'Owner', identifier: 'track-t1' });
+      throw new Error('Expected fetchQdnResourceData to reject');
+    } catch (error) {
+      expect(error).toBeInstanceOf(QdnResourceReadError);
+      expect((error as QdnResourceReadError).code).toBe('NOT_FOUND');
+    }
+  });
+
+  it('keeps transient read failures UNAVAILABLE, not NOT_FOUND', async () => {
+    mockedSend.mockRejectedValue(new Error('temporarily unavailable'));
+
+    try {
+      await fetchQdnResourceData({ service: 'JSON', name: 'Owner', identifier: 'track-t1' });
+      throw new Error('Expected fetchQdnResourceData to reject');
+    } catch (error) {
+      expect(error).toBeInstanceOf(QdnResourceReadError);
+      expect((error as QdnResourceReadError).code).toBe('UNAVAILABLE');
+    }
+  });
+});
+
+describe('QDN read error classification', () => {
+  it('recognizes current Core file-not-found semantics', () => {
+    expect(isConfirmedQdnNotFoundError(new QdnResourceReadError('NOT_FOUND', 'missing'))).toBe(
+      true,
+    );
+    expect(
+      isConfirmedQdnNotFoundError(
+        new Error(
+          `Couldn't find PUT transaction for name Owner, service JSON and identifier track-t1`,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isConfirmedQdnNotFoundError(
+        new Error(
+          JSON.stringify({
+            error: QDN_FILE_NOT_FOUND_ERROR,
+            message: "Couldn't find PUT transaction for name Owner",
+          }),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not collapse malformed or unavailable failures into not-found', () => {
+    expect(
+      isConfirmedQdnNotFoundError(new QdnResourceReadError('UNAVAILABLE', 'network failed')),
+    ).toBe(false);
+    expect(isConfirmedQdnNotFoundError(new Error('temporarily unavailable'))).toBe(false);
+    expect(
+      isConfirmedQdnNotFoundError(new Error('QDN error 125: identifier must not exceed 64 bytes')),
+    ).toBe(false);
   });
 });
 

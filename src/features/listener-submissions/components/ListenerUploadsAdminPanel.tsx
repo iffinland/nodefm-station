@@ -106,8 +106,8 @@ export function ListenerUploadsAdminPanel() {
 
       {incomplete && diagnostics.length > 0 ? (
         <p className="listener-uploads__warning">
-          {diagnostics.length} discovered resource
-          {diagnostics.length !== 1 ? 's' : ''} could not be included.
+          {diagnostics.length} listener submission
+          {diagnostics.length !== 1 ? 's' : ''} could not be fully resolved.
         </p>
       ) : null}
 

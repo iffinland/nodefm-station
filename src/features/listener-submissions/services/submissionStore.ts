@@ -47,6 +47,7 @@ import {
   getSubmissionModerationQdnIdentifier,
   getSubmissionQdnIdentifier,
   isSubmissionQdnIdentifier,
+  isSubmissionModerationQdnIdentifier,
   normalizeSubmissionName,
   serializeSubmissionForQdn,
   serializeSubmissionModerationForQdn,
@@ -507,6 +508,18 @@ async function loadReviewRecordsInternal(
     const metadata = metadataFromResult(result);
     const identifier = typeof result.identifier === 'string' ? result.identifier : '<unknown>';
 
+    if (typeof result.identifier === 'string' && !isSubmissionQdnIdentifier(identifier)) {
+      // Search can legitimately return station-owned moderation resources
+      // when their identifiers share a submission-like prefix. Classify by
+      // exact resource type before fetching/parsing anything as a listener
+      // submission.
+      continue;
+    }
+
+    if (typeof result.identifier === 'string' && isSubmissionModerationQdnIdentifier(identifier)) {
+      continue;
+    }
+
     if (!metadata) {
       diagnostics.push(
         diagnostic(
@@ -519,7 +532,10 @@ async function loadReviewRecordsInternal(
       continue;
     }
 
-    if (!isSubmissionQdnIdentifier(metadata.identifier)) {
+    if (
+      !isSubmissionQdnIdentifier(metadata.identifier) ||
+      isSubmissionModerationQdnIdentifier(metadata.identifier)
+    ) {
       continue;
     }
 

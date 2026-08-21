@@ -84,6 +84,40 @@ describe('Qortium bridge transport', () => {
     ).rejects.toThrow(/Qortium request failed/);
   });
 
+  it('normalizes numeric QDN error objects to a readable node error', async () => {
+    const qdnRequest = vi.fn().mockResolvedValue({
+      error: 1401,
+      message: "Couldn't find PUT transaction for name Owner, service JSON and identifier track-t1",
+    });
+    vi.stubGlobal('window', { qdnRequest });
+
+    await expect(
+      sendBridgeRequest({
+        action: 'FETCH_QDN_RESOURCE',
+        service: 'JSON',
+        name: 'Owner',
+        identifier: 'track-t1',
+      }),
+    ).rejects.toThrow(/QDN error 1401: Couldn't find PUT transaction/);
+  });
+
+  it('normalizes rejected numeric QDN error objects instead of losing the code', async () => {
+    const qdnRequest = vi.fn().mockRejectedValue({
+      error: 125,
+      message: 'identifier must not exceed 64 UTF-8 bytes',
+    });
+    vi.stubGlobal('window', { qdnRequest });
+
+    await expect(
+      sendBridgeRequest({
+        action: 'PUBLISH_QDN_RESOURCE',
+        service: 'JSON',
+        name: 'Owner',
+        identifier: 'nodefm-like-too-long',
+      }),
+    ).rejects.toThrow(/QDN error 125: identifier must not exceed/);
+  });
+
   it('still treats a top-level message as an error for non-resource actions', async () => {
     const qdnRequest = vi.fn().mockResolvedValue({
       message: 'account unavailable',

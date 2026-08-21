@@ -12,9 +12,11 @@ import type {
   TrackLikeRecord,
 } from '../features/likes/services/likeService';
 import {
+  buildLegacyTrackLikeIdentifier,
   buildTrackLikeEnvelope,
   buildTrackLikeIdentifier,
   classifyInvalidTrackLikeEnvelope,
+  isTrackLikeIdentifierForPair,
   isTrackLikeEnvelope,
   rankLikedTracks,
   reduceTrackLikeRecords,
@@ -84,6 +86,54 @@ describe('Like identity', () => {
     expect(
       buildTrackLikeIdentifier('11111111-1111-1111-1111-111111111111', 'Q-alice').length,
     ).toBeLessThanOrEqual(64);
+  });
+
+  it('bounds accepted Listener Track and UUID Track identities to 64 UTF-8 bytes', () => {
+    const acceptedTrackId = 'sub-11111111-1111-4111-8111-111111111111';
+    const normalTrackId = '11111111-1111-4111-8111-111111111111';
+    const walletAddress = 'Q-alice';
+
+    const identifiers = [
+      buildTrackLikeIdentifier(acceptedTrackId, walletAddress),
+      buildTrackLikeIdentifier(normalTrackId, walletAddress),
+    ];
+
+    for (const identifier of identifiers) {
+      expect(new TextEncoder().encode(identifier).byteLength).toBeLessThanOrEqual(64);
+      expect(identifier.length).toBeLessThanOrEqual(64);
+      expect(identifier.startsWith('nodefm-like-')).toBe(true);
+    }
+  });
+
+  it('is bounded and Unicode-safe for long and multibyte identities', () => {
+    const longUnicodeTrackId = `${'曲'.repeat(80)}-listener-submission`;
+    const multibyteWallet = 'Q-álíçé-🙂';
+    const identifier = buildTrackLikeIdentifier(longUnicodeTrackId, multibyteWallet);
+
+    expect(new TextEncoder().encode(identifier).byteLength).toBeLessThanOrEqual(64);
+    expect(identifier).toBe(buildTrackLikeIdentifier(longUnicodeTrackId, multibyteWallet));
+  });
+
+  it('does not trivially collide across distinct Track identities', () => {
+    const identifiers = new Set(
+      Array.from({ length: 1000 }, (_, index) =>
+        buildTrackLikeIdentifier(`track-${index}`, 'Q-alice'),
+      ),
+    );
+
+    expect(identifiers.size).toBe(1000);
+  });
+
+  it('accepts both current and legacy identifier formats for read compatibility', () => {
+    const trackId = 'sub-11111111-1111-4111-8111-111111111111';
+    const walletAddress = 'Q-alice';
+    const current = buildTrackLikeIdentifier(trackId, walletAddress);
+    const legacy = buildLegacyTrackLikeIdentifier(trackId, walletAddress);
+
+    expect(current).not.toBe(legacy);
+    expect(isTrackLikeIdentifierForPair(current, trackId, walletAddress)).toBe(true);
+    expect(isTrackLikeIdentifierForPair(legacy, trackId, walletAddress)).toBe(true);
+    expect(isTrackLikeIdentifierForPair('nodefm-like-forged', trackId, walletAddress)).toBe(false);
   });
 
   it('validates the Like envelope and rejects forged extra fields', () => {

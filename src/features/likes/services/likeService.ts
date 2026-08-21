@@ -99,6 +99,26 @@ export function normalizeWalletAddress(value: string): string {
   return value.trim();
 }
 
+const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
+const FNV_PRIME_64 = 0x100000001b3n;
+const FNV_MASK_64 = 0xffffffffffffffffn;
+
+function encodeUtf8(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+function fnv1a64Hex(value: string): string {
+  const bytes = encodeUtf8(value);
+  let hash = FNV_OFFSET_BASIS_64;
+
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * FNV_PRIME_64) & FNV_MASK_64;
+  }
+
+  return hash.toString(16).padStart(16, '0');
+}
+
 function fnv1aHash(value: string): string {
   let first = 0x811c9dc5;
   let second = 0x01000193;
@@ -118,11 +138,15 @@ function fnv1aHash(value: string): string {
 }
 
 /**
- * Build a deterministic QDN identifier for one effective actor/target
- * pair. The target is a track ID; the actor is the verified wallet
- * address. QDN `name` remains the publisher's registered Qortium name.
+ * Normalize the two inputs that participate in Like identity.
  */
-export function buildTrackLikeIdentifier(trackId: string, walletAddress: string): string {
+function normalizeTrackLikeIdentity(
+  trackId: string,
+  walletAddress: string,
+): {
+  trackId: string;
+  walletAddress: string;
+} {
   const normalizedTrackId = trackId.trim();
   const normalizedWalletAddress = normalizeWalletAddress(walletAddress);
 
@@ -130,7 +154,60 @@ export function buildTrackLikeIdentifier(trackId: string, walletAddress: string)
     throw new Error('Track ID and wallet address are required for a Like identifier.');
   }
 
-  return `${LIKE_IDENTIFIER_PREFIX}${normalizedTrackId}-${fnv1aHash(normalizedWalletAddress)}`;
+  return {
+    trackId: normalizedTrackId,
+    walletAddress: normalizedWalletAddress,
+  };
+}
+
+/**
+ * Build the current deterministic QDN identifier for one effective
+ * actor/target pair.
+ *
+ * The raw track ID is deliberately NOT embedded in the identifier. QDN
+ * identifiers are limited to 64 UTF-8 bytes, and accepted Listener Tracks
+ * use `sub-<uuid>` track IDs that were long enough to overflow the legacy
+ * `nodefm-like-<trackId>-<walletHash>` format. Hashing the stable pair keeps
+ * the identifier bounded, deterministic, Unicode-safe, and independent of
+ * display title/artist.
+ */
+export function buildTrackLikeIdentifier(trackId: string, walletAddress: string): string {
+  const identity = normalizeTrackLikeIdentity(trackId, walletAddress);
+
+  return `${LIKE_IDENTIFIER_PREFIX}${fnv1a64Hex(
+    `${identity.trackId}\u0000${identity.walletAddress}`,
+  )}`;
+}
+
+/**
+ * Build the legacy identifier for read/backward compatibility.
+ *
+ * New writes use `buildTrackLikeIdentifier`; this function exists so old
+ * `nodefm-like-<trackId>-<walletHash>` resources can still be discovered
+ * and reduced without requiring republishing them.
+ */
+export function buildLegacyTrackLikeIdentifier(trackId: string, walletAddress: string): string {
+  const identity = normalizeTrackLikeIdentity(trackId, walletAddress);
+
+  return `${LIKE_IDENTIFIER_PREFIX}${identity.trackId}-${fnv1aHash(identity.walletAddress)}`;
+}
+
+/**
+ * True when an on-chain identifier is a valid Like identifier for the
+ * claimed target/actor pair, accepting both the current bounded format and
+ * the legacy readable format.
+ */
+export function isTrackLikeIdentifierForPair(
+  identifier: string,
+  trackId: string,
+  walletAddress: string,
+): boolean {
+  const normalizedIdentifier = identifier.trim();
+
+  return (
+    normalizedIdentifier === buildTrackLikeIdentifier(trackId, walletAddress) ||
+    normalizedIdentifier === buildLegacyTrackLikeIdentifier(trackId, walletAddress)
+  );
 }
 
 export function buildTrackLikeEnvelope(

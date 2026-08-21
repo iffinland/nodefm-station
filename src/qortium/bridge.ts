@@ -269,8 +269,27 @@ function parseRequestError(response: unknown, action: string): string | null {
     return null;
   }
 
+  if (typeof response.error === 'number' && Number.isInteger(response.error)) {
+    const message =
+      typeof response.message === 'string' && response.message.trim()
+        ? response.message.trim()
+        : `QDN request failed with error ${response.error}.`;
+
+    return `QDN error ${response.error}: ${message}`;
+  }
+
   if (typeof response.error === 'string' && response.error.trim()) {
-    return response.error;
+    const errorCode = response.error.trim();
+    const message =
+      typeof response.message === 'string' && response.message.trim()
+        ? response.message.trim()
+        : null;
+
+    if (/^\d+$/.test(errorCode) && message) {
+      return `QDN error ${errorCode}: ${message}`;
+    }
+
+    return errorCode;
   }
 
   if (response.error === true || response.success === false) {
@@ -290,6 +309,28 @@ function parseRequestError(response: unknown, action: string): string | null {
   }
 
   return null;
+}
+
+function toRequestError(value: unknown, action: string): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+
+  const parsedError = parseRequestError(value, action);
+  if (parsedError) {
+    return new Error(parsedError);
+  }
+
+  if (isRecord(value)) {
+    const message =
+      typeof value.message === 'string' && value.message.trim()
+        ? value.message.trim()
+        : JSON.stringify(value);
+
+    return new Error(message);
+  }
+
+  return new QortiumBridgeError('REQUEST_FAILED', `Qortium request ${action} failed.`);
 }
 
 /**
@@ -347,9 +388,7 @@ export async function sendBridgeRequest<T = unknown>(request: Record<string, unk
       }
 
       if (attempt >= maxAttempts) {
-        throw error instanceof Error
-          ? error
-          : new QortiumBridgeError('REQUEST_FAILED', `Qortium request ${action} failed.`);
+        throw toRequestError(error, action);
       }
 
       await sleep(READ_RETRY_DELAY_MS * attempt);

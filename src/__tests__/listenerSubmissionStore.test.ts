@@ -355,6 +355,30 @@ describe('listener submission discovery', () => {
     expect(getSubmissionIncomplete()).toBe(false);
   });
 
+  it('excludes station moderation resources and audio resources from submission discovery', async () => {
+    mockedSearch.mockResolvedValue([
+      searchResult(LISTENER_A, getSubmissionQdnIdentifier(SUBMISSION_ID), 1),
+      {
+        service: 'JSON',
+        name: STATION_NAME,
+        identifier: getSubmissionModerationQdnIdentifier(SUBMISSION_ID),
+        created: 2,
+      },
+      {
+        service: 'AUDIO',
+        name: LISTENER_A,
+        identifier: getSubmissionAudioQdnIdentifier(SUBMISSION_ID),
+        created: 3,
+      },
+    ]);
+
+    await loadListenerSubmissions(STATION_NAME, OWNER_ADDRESS);
+
+    expect(getSubmissionReviews()).toHaveLength(1);
+    expect(getSubmissionDiagnostics()).toEqual([]);
+    expect(getSubmissionIncomplete()).toBe(false);
+  });
+
   it('rejects forged identity claims without accepting their payloads', async () => {
     mockedSearch.mockResolvedValue([
       searchResult(LISTENER_A, getSubmissionQdnIdentifier(SUBMISSION_ID), 1),

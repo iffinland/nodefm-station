@@ -128,6 +128,37 @@ describe('moderation availability classification', () => {
     expect(getSubmissionIncomplete()).toBe(false);
   });
 
+  it('normalizes Core 1401 missing PUT transaction to PENDING', async () => {
+    const moderationIdentifier = getSubmissionModerationQdnIdentifier(SUBMISSION_ID);
+
+    await loadSingleSubmission(() => {
+      throw new Error(
+        `QDN error 1401: Couldn't find PUT transaction for name ${STATION_NAME}, service JSON and identifier ${moderationIdentifier}`,
+      );
+    });
+
+    const review = getSubmissionReviews()[0];
+    expect(review.status).toBe('PENDING');
+    expect(review.moderation).toBeNull();
+    expect(getSubmissionIncomplete()).toBe(false);
+  });
+
+  it('normalizes stringified Core 1401 error bodies to PENDING', async () => {
+    const moderationIdentifier = getSubmissionModerationQdnIdentifier(SUBMISSION_ID);
+
+    await loadSingleSubmission(() => {
+      throw new Error(
+        JSON.stringify({
+          error: 1401,
+          message: `Couldn't find PUT transaction for name ${STATION_NAME}, service JSON and identifier ${moderationIdentifier}`,
+        }),
+      );
+    });
+
+    expect(getSubmissionReviews()[0].status).toBe('PENDING');
+    expect(getSubmissionIncomplete()).toBe(false);
+  });
+
   it('reconstructs an ACCEPTED moderation resource as ACCEPTED', async () => {
     await loadSingleSubmission(async () => moderationPayload('accepted'));
 
@@ -142,6 +173,21 @@ describe('moderation availability classification', () => {
     const review = getSubmissionReviews()[0];
     expect(review.status).toBe('REJECTED');
     expect(review.moderation?.decision).toBe('rejected');
+  });
+
+  it('keeps a malformed moderation resource unresolved, not PENDING', async () => {
+    await loadSingleSubmission(async () => ({
+      schemaVersion: 1,
+      moderationId: 'not-valid',
+    }));
+
+    const review = getSubmissionReviews()[0];
+    expect(review.status).toBe('UNRESOLVED');
+    expect(review.moderationError).toContain('Invalid station moderation resource');
+    expect(getSubmissionIncomplete()).toBe(true);
+    expect(getSubmissionDiagnostics().some((item) => item.code === 'MODERATION_UNAVAILABLE')).toBe(
+      true,
+    );
   });
 
   it('keeps unavailable moderation unresolved and incomplete, not PENDING', async () => {

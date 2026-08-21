@@ -20,6 +20,7 @@ vi.mock('../qortium/identity', () => ({
 import { fetchQdnResourceData, publishResource, searchQdnResources } from '../qortium/qdn';
 import { resolveNameWalletAddress } from '../qortium/identity';
 import {
+  buildLegacyTrackLikeIdentifier,
   buildTrackLikeEnvelope,
   buildTrackLikeIdentifier,
 } from '../features/likes/services/likeService';
@@ -91,6 +92,43 @@ describe('Like store discovery', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(2);
     expect(getLikeRecords()).toHaveLength(2);
     expect(getTrackLikeAggregate('track-1').count).toBe(2);
+  });
+
+  it('reads legacy Like identifiers published before the bounded format', async () => {
+    const trackId = 'track-1';
+    const publisherName = 'alice';
+    const walletAddress = 'Q-alice';
+    const legacyIdentifier = buildLegacyTrackLikeIdentifier(trackId, walletAddress);
+
+    mockedSearch.mockResolvedValue([
+      {
+        service: 'JSON',
+        name: publisherName,
+        identifier: legacyIdentifier,
+        created: 1,
+        updated: 2,
+      },
+    ]);
+    mockedFetch.mockResolvedValue(
+      buildTrackLikeEnvelope(
+        {
+          operation: 'like',
+          targetType: 'track',
+          targetId: trackId,
+          state: 'active',
+          publisherName,
+          walletAddress,
+        },
+        legacyIdentifier,
+        '2026-01-01T00:00:00.000Z',
+      ),
+    );
+    mockedResolveName.mockResolvedValue(walletAddress);
+
+    await loadLikeRecords();
+
+    expect(getLikeRecords()).toHaveLength(1);
+    expect(getTrackLikeAggregate(trackId).count).toBe(1);
   });
 
   it('does not turn a failed Like publish into local success', async () => {
