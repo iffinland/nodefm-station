@@ -14,6 +14,8 @@ import { ErrorState } from '../components/ErrorState';
 import { useStation } from '../features/station';
 import { useLiveRadioPlayerContext } from '../features/radio/player';
 import { formatDurationMs } from '../utils/duration';
+import { TrackDetailModal } from '../features/tracks';
+import type { Track } from '../types/domain';
 import {
   loadPublicPlaylistDetail,
   resolvePublicPlaylistAudioTracks,
@@ -41,6 +43,7 @@ export default function PlaylistDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [resolvingAudio, setResolvingAudio] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [detailTrack, setDetailTrack] = useState<Track | null>(null);
 
   const load = useCallback(async (publisher: string, id: string) => {
     setLoading(true);
@@ -277,6 +280,14 @@ export default function PlaylistDetailPage() {
                   {formatDurationMs(entry.track.durationMs)}
                 </span>
                 <button
+                  className="button button--secondary playlist-detail__track-info"
+                  type="button"
+                  aria-label={`${entry.track.title} track details`}
+                  onClick={() => setDetailTrack(entry.track)}
+                >
+                  ℹ
+                </button>
+                <button
                   className="button button--secondary"
                   type="button"
                   onClick={() => startPlayback(index)}
@@ -288,6 +299,9 @@ export default function PlaylistDetailPage() {
             ))}
           </ol>
         </section>
+        {detailTrack && (
+          <TrackDetailModal track={detailTrack} onClose={() => setDetailTrack(null)} />
+        )}
       </div>
     </PageShell>
   );

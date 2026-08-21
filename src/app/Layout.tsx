@@ -8,9 +8,13 @@
  * ============================================================ */
 
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { useStation } from '../features/station';
 import { useLiveRadioPlayerContext } from '../features/radio/player';
 import { formatDurationMs } from '../utils/duration';
+import { useLibrary } from '../hooks/useLibrary';
+import { TrackDetailModal } from '../features/tracks';
+import type { Track } from '../types/domain';
 
 const PUBLIC_NAV = [
   { to: '/', label: 'Radio' },
@@ -22,6 +26,8 @@ const PUBLIC_NAV = [
 export function Layout() {
   const location = useLocation();
   const { isOwner, station } = useStation();
+  const { getTrack } = useLibrary();
+  const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const {
     playerState,
     timeline,
@@ -38,6 +44,7 @@ export function Layout() {
 
   const liveState = timeline.liveState;
   const currentTrack = playerState.currentTrack;
+  const fullCurrentTrack = currentTrack ? getTrack(currentTrack.trackId) : undefined;
   const isPlaying = playerState.playbackState === 'playing';
   const progressMs = Math.max(0, Math.round(playerState.currentOffsetSec * 1000));
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
@@ -117,6 +124,15 @@ export function Layout() {
               </span>
             )}
           </div>
+          <button
+            className="player-bar__info-button"
+            type="button"
+            aria-label="Track details"
+            disabled={!fullCurrentTrack}
+            onClick={() => fullCurrentTrack && setDetailTrack(fullCurrentTrack)}
+          >
+            ℹ
+          </button>
         </div>
         <div className="player-bar__controls">
           {playerState.mode === 'PLAYLIST' && (
@@ -198,6 +214,7 @@ export function Layout() {
           </div>
         </div>
       </footer>
+      {detailTrack && <TrackDetailModal track={detailTrack} onClose={() => setDetailTrack(null)} />}
     </div>
   );
 }

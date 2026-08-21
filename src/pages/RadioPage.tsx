@@ -13,10 +13,12 @@ import { useLikes } from '../features/likes/useLikes';
 import { formatDurationMs } from '../utils/duration';
 import { isValidIanaTimeZone } from '../features/scheduling/services/timezone';
 import { useState } from 'react';
+import type { Track } from '../types/domain';
 import { MessageOwnerModal } from '../features/messaging';
 import { TipOwnerModal } from '../features/tips';
 import { ShareModal } from '../features/sharing';
 import { StationNotices } from '../features/notices/components';
+import { TrackDetailModal } from '../features/tracks';
 
 export default function RadioPage() {
   const { playerState, timeline, playbackError, retry } = useLiveRadioPlayerContext();
@@ -37,6 +39,7 @@ export default function RadioPage() {
   const [messageOpen, setMessageOpen] = useState(false);
   const [tipOpen, setTipOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
   const scheduleTimeZone =
     station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
@@ -101,63 +104,84 @@ export default function RadioPage() {
                   {formatDurationMs(currentTrack.durationMs)} track duration
                 </p>
               )}
-              {currentTrack && (
-                <div className="now-playing__like">
-                  <button
-                    className={`button ${
-                      isLiked(currentTrack.trackId) ? 'button--liked' : 'button--like'
-                    }`}
-                    type="button"
-                    onClick={handleLike}
-                    aria-pressed={isLiked(currentTrack.trackId)}
-                    disabled={likesLoading}
-                  >
-                    <span className="now-playing__like-icon" aria-hidden="true">
-                      {isLiked(currentTrack.trackId) ? '♥' : '♡'}
-                    </span>
-                    <span>{isLiked(currentTrack.trackId) ? 'Liked' : 'Like'}</span>
-                    <span className="now-playing__like-count">
-                      {getLikeCount(currentTrack.trackId)}
-                    </span>
-                  </button>
-                  {likeError && <p className="now-playing__error">{likeError}</p>}
-                  {likesLoadError && (
-                    <p className="now-playing__error">Like data unavailable: {likesLoadError}</p>
+              {(currentTrack || station) && (
+                <div className="now-playing__actions">
+                  {currentTrack && (
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => setDetailTrack(currentTrack)}
+                    >
+                      Track Details
+                    </button>
                   )}
-                  {likesIncomplete && (
+                  {currentTrack && (
+                    <button
+                      className={`button ${
+                        isLiked(currentTrack.trackId) ? 'button--liked' : 'button--like'
+                      }`}
+                      type="button"
+                      onClick={handleLike}
+                      aria-pressed={isLiked(currentTrack.trackId)}
+                      disabled={likesLoading}
+                    >
+                      <span className="now-playing__like-icon" aria-hidden="true">
+                        {isLiked(currentTrack.trackId) ? '♥' : '♡'}
+                      </span>
+                      <span>{isLiked(currentTrack.trackId) ? 'Liked' : 'Like'}</span>
+                      <span className="now-playing__like-count">
+                        {getLikeCount(currentTrack.trackId)}
+                      </span>
+                    </button>
+                  )}
+                  {station && (
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => setMessageOpen(true)}
+                      title={
+                        station.messagingEnabled ? undefined : 'Station messaging is disabled.'
+                      }
+                    >
+                      Message Owner
+                    </button>
+                  )}
+                  {station && (
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => setTipOpen(true)}
+                      title={
+                        station.tipsEnabled ? undefined : 'Station tips/donations are disabled.'
+                      }
+                    >
+                      Tip Station
+                    </button>
+                  )}
+                  {station && (
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => setShareOpen(true)}
+                    >
+                      Share
+                    </button>
+                  )}
+                </div>
+              )}
+              {currentTrack && (likeError || likesLoadError || likesIncomplete) ? (
+                <div className="now-playing__action-errors">
+                  {likeError ? <p className="now-playing__error">{likeError}</p> : null}
+                  {likesLoadError ? (
+                    <p className="now-playing__error">Like data unavailable: {likesLoadError}</p>
+                  ) : null}
+                  {likesIncomplete ? (
                     <p className="now-playing__error">
                       Like data is incomplete and may not reflect all Likes.
                     </p>
-                  )}
+                  ) : null}
                 </div>
-              )}
-              {station && (
-                <div className="now-playing__social-actions">
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => setMessageOpen(true)}
-                    title={station.messagingEnabled ? undefined : 'Station messaging is disabled.'}
-                  >
-                    Message Owner
-                  </button>
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => setTipOpen(true)}
-                    title={station.tipsEnabled ? undefined : 'Station tips/donations are disabled.'}
-                  >
-                    Tip Owner
-                  </button>
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => setShareOpen(true)}
-                  >
-                    Share
-                  </button>
-                </div>
-              )}
+              ) : null}
               {playbackError && (
                 <p className="now-playing__error">
                   {playbackError}{' '}
@@ -263,6 +287,7 @@ export default function RadioPage() {
       )}
       {station && tipOpen && <TipOwnerModal station={station} onClose={() => setTipOpen(false)} />}
       {shareOpen && <ShareModal target={{ kind: 'app' }} onClose={() => setShareOpen(false)} />}
+      {detailTrack && <TrackDetailModal track={detailTrack} onClose={() => setDetailTrack(null)} />}
     </PageShell>
   );
 }

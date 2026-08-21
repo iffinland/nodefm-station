@@ -11,6 +11,7 @@ import { AuthProvider } from './AuthProvider';
 import { StationProvider } from '../../features/station/StationProvider';
 import { LiveRadioPlayerProvider } from '../../features/radio/player';
 import { TaxonomyProvider } from '../../features/taxonomy';
+import { MetadataIntelligenceProvider } from '../../features/metadata-intelligence';
 
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
@@ -18,7 +19,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <AuthProvider>
         <StationProvider>
           <TaxonomyProvider>
-            <LiveRadioPlayerProvider>{children}</LiveRadioPlayerProvider>
+            <MetadataIntelligenceProvider>
+              <LiveRadioPlayerProvider>{children}</LiveRadioPlayerProvider>
+            </MetadataIntelligenceProvider>
           </TaxonomyProvider>
         </StationProvider>
       </AuthProvider>

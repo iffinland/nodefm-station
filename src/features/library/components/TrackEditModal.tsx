@@ -10,6 +10,7 @@ import type { Track } from '../../../types/domain';
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
+import { ArtistInput, TitleInput } from '../../metadata-intelligence';
 import { TrackCover } from './TrackCover';
 import { publishAndUpdateTrackCover, readCoverFile } from '../services/coverService';
 
@@ -123,12 +124,12 @@ export function TrackEditModal({ track, onClose }: Props) {
     <Modal title="Edit Track" onClose={onClose}>
       <label className="form-field">
         Title
-        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <TitleInput value={title} onChange={setTitle} artistValue={artist} />
       </label>
 
       <label className="form-field">
         Artist
-        <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} />
+        <ArtistInput value={artist} onChange={setArtist} />
       </label>
 
       <label className="form-field">

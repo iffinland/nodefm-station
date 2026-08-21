@@ -26,6 +26,7 @@ import {
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
+import { ArtistInput, TitleInput } from '../../metadata-intelligence';
 import { publishTrackCoverImage, readCoverFile } from '../services/coverService';
 import { resolveAudioDurationFromUrl } from '../../../utils/duration';
 import { getAudioQdnIdentifier } from '../../tracks/services/trackService';
@@ -304,20 +305,19 @@ export function UploadFlow({
 
           <label className="form-field">
             Title
-            <input
-              type="text"
+            <TitleInput
               value={state.title}
-              onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))}
+              onChange={(value) => setState((s) => ({ ...s, title: value }))}
+              artistValue={state.artist}
               placeholder="Track title"
             />
           </label>
 
           <label className="form-field">
             Artist
-            <input
-              type="text"
+            <ArtistInput
               value={state.artist}
-              onChange={(e) => setState((s) => ({ ...s, artist: e.target.value }))}
+              onChange={(value) => setState((s) => ({ ...s, artist: value }))}
               placeholder="Artist name"
             />
           </label>

@@ -16,6 +16,7 @@ import { generateId } from '../../../utils/id';
 import type { ListenerTrackSubmission, QdnResourceRef } from '../../../types/domain';
 import { publishListenerSubmission, publishSubmissionMetadata } from '../services/submissionStore';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
+import { ArtistInput, TitleInput } from '../../metadata-intelligence';
 
 const COVER_INLINE_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -394,20 +395,19 @@ export function SubmitMusicForm() {
 
       <label className="form-field">
         Title
-        <input
-          type="text"
+        <TitleInput
           value={state.title}
-          onChange={(event) => setState((current) => ({ ...current, title: event.target.value }))}
+          onChange={(value) => setState((current) => ({ ...current, title: value }))}
+          artistValue={state.artist}
           placeholder="Track title"
         />
       </label>
 
       <label className="form-field">
         Artist
-        <input
-          type="text"
+        <ArtistInput
           value={state.artist}
-          onChange={(event) => setState((current) => ({ ...current, artist: event.target.value }))}
+          onChange={(value) => setState((current) => ({ ...current, artist: value }))}
           placeholder="Artist name"
         />
       </label>
