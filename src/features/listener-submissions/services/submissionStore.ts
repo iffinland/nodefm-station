@@ -486,11 +486,18 @@ export async function publishSubmissionMetadata(
 
 // ── Discovery ──────────────────────────────────────────────────────
 
+type SubmissionLoadSnapshot = {
+  reviews: ListenerSubmissionReview[];
+  diagnostics: SubmissionDiagnostic[];
+  incomplete: boolean;
+};
+
 async function loadReviewRecordsInternal(
   stationPublisherName: string,
   ownerAddress: string,
-): Promise<void> {
-  incomplete = false;
+): Promise<SubmissionLoadSnapshot> {
+  const nextDiagnostics: SubmissionDiagnostic[] = [];
+  let nextIncomplete = false;
 
   const results = await searchQdnResources({
     service: SUBMISSION_QDN_SERVICE,
@@ -521,14 +528,14 @@ async function loadReviewRecordsInternal(
     }
 
     if (!metadata) {
-      diagnostics.push(
+      nextDiagnostics.push(
         diagnostic(
           'INVALID_METADATA',
           identifier,
           'Submission discovery result is missing trusted QDN metadata.',
         ),
       );
-      incomplete = true;
+      nextIncomplete = true;
       continue;
     }
 
@@ -558,11 +565,11 @@ async function loadReviewRecordsInternal(
       });
     } catch (fetchError) {
       if (isMissingResourceError(fetchError)) {
-        diagnostics.push(
+        nextDiagnostics.push(
           diagnostic('RESOURCE_NOT_FOUND', identifier, 'Submission resource was not found.'),
         );
       } else {
-        diagnostics.push(
+        nextDiagnostics.push(
           diagnostic(
             'RESOURCE_UNAVAILABLE',
             identifier,
@@ -571,7 +578,7 @@ async function loadReviewRecordsInternal(
             }`,
           ),
         );
-        incomplete = true;
+        nextIncomplete = true;
       }
 
       continue;
@@ -580,7 +587,7 @@ async function loadReviewRecordsInternal(
     const submission = deserializeSubmissionFromQdn(payload);
 
     if (!submission) {
-      diagnostics.push(
+      nextDiagnostics.push(
         diagnostic('MALFORMED_RESOURCE', identifier, 'Invalid listener track submission resource.'),
       );
       continue;
@@ -593,7 +600,7 @@ async function loadReviewRecordsInternal(
     );
 
     if (!structural.ok) {
-      diagnostics.push(diagnostic(structural.code, identifier, structural.detail));
+      nextDiagnostics.push(diagnostic(structural.code, identifier, structural.detail));
       continue;
     }
 
@@ -612,7 +619,7 @@ async function loadReviewRecordsInternal(
       normalizeWalletAddress(resolvedAddress) !==
         normalizeWalletAddress(submission.submitterAddress)
     ) {
-      diagnostics.push(
+      nextDiagnostics.push(
         diagnostic(
           'IDENTITY_UNVERIFIED',
           identifier,
@@ -682,10 +689,10 @@ async function loadReviewRecordsInternal(
           moderationFetchError instanceof Error
             ? moderationFetchError.message
             : 'Moderation state could not be resolved.';
-        diagnostics.push(
+        nextDiagnostics.push(
           diagnostic('MODERATION_UNAVAILABLE', moderationIdentifier, moderationError),
         );
-        incomplete = true;
+        nextIncomplete = true;
       }
     }
 
@@ -703,7 +710,11 @@ async function loadReviewRecordsInternal(
       Date.parse(right.submission.submittedAt) - Date.parse(left.submission.submittedAt),
   );
 
-  reviews = nextReviews;
+  return {
+    reviews: nextReviews,
+    diagnostics: nextDiagnostics,
+    incomplete: nextIncomplete,
+  };
 }
 
 export async function loadListenerSubmissions(
@@ -711,60 +722,70 @@ export async function loadListenerSubmissions(
   ownerAddress: string,
   force = false,
 ): Promise<void> {
-  const nextScope = `${stationPublisherName.trim()}\u0000${ownerAddress.trim()}`;
+  const trimmedPublisherName = stationPublisherName.trim();
+  const trimmedOwnerAddress = ownerAddress.trim();
+  const nextScope = `${trimmedPublisherName}\u0000${trimmedOwnerAddress}`;
 
-  if (loaded && !force && scope === nextScope) {
-    return;
-  }
-
-  if (loading && !force && scope === nextScope) {
-    if (loadPromise) {
-      return loadPromise;
+  if (!force) {
+    if (loaded && scope === nextScope) {
+      return;
     }
-    return;
+
+    if (loading && scope === nextScope) {
+      return loadPromise ?? Promise.resolve();
+    }
   }
 
-  if (force && loadPromise) {
-    epoch += 1;
-    loaded = false;
-    loading = false;
-    reviews = [];
-    diagnostics = [];
-    error = null;
-    incomplete = false;
-    loadPromise = null;
-  }
+  const sameScope = scope === nextScope;
+  const hasVisibleState = loaded || reviews.length > 0 || diagnostics.length > 0;
+  const preserveVisibleState = force && sameScope && hasVisibleState;
 
+  // Every newly started load invalidates any prior in-flight load. This is
+  // deliberately not limited to force refreshes: a scope change must also
+  // stop an older account's async response from being applied later.
+  epoch += 1;
   const currentEpoch = epoch;
+  loadPromise = null;
+
   scope = nextScope;
   loading = true;
   error = null;
-  reviews = [];
-  diagnostics = [];
-  incomplete = false;
+
+  if (!preserveVisibleState) {
+    loaded = false;
+    reviews = [];
+    diagnostics = [];
+    incomplete = false;
+  }
+
   notify();
 
-  if (!stationPublisherName.trim() || !ownerAddress.trim()) {
+  if (!trimmedPublisherName || !trimmedOwnerAddress) {
     loaded = true;
     loading = false;
+    loadPromise = null;
     notify();
     return;
   }
 
-  loadPromise = loadReviewRecordsInternal(stationPublisherName.trim(), ownerAddress.trim())
-    .then(() => {
-      if (currentEpoch === epoch) {
+  loadPromise = loadReviewRecordsInternal(trimmedPublisherName, trimmedOwnerAddress)
+    .then((snapshot) => {
+      if (currentEpoch === epoch && scope === nextScope) {
+        reviews = snapshot.reviews;
+        diagnostics = snapshot.diagnostics;
+        incomplete = snapshot.incomplete;
         loaded = true;
+        error = null;
       }
     })
     .catch((loadError) => {
-      if (currentEpoch === epoch) {
+      if (currentEpoch === epoch && scope === nextScope) {
         error =
           loadError instanceof Error ? loadError.message : 'Failed to load listener submissions.';
       }
     })
     .finally(() => {
-      if (currentEpoch === epoch) {
+      if (currentEpoch === epoch && scope === nextScope) {
         loading = false;
         loadPromise = null;
         notify();
@@ -789,6 +810,10 @@ function assertOwner(actorAddress: string | null, ownerAddress: string): void {
   }
 }
 
+function submissionScopeKey(stationPublisherName: string, ownerAddress: string): string {
+  return `${stationPublisherName.trim()}\u0000${ownerAddress.trim()}`;
+}
+
 function publishModeration(
   moderation: SubmissionModeration,
   stationPublisherName: string,
@@ -809,6 +834,11 @@ export async function acceptSubmission(
   ownerAddress: string,
 ): Promise<AcceptSubmissionResult> {
   assertOwner(actorAddress, ownerAddress);
+  const moderationScope = submissionScopeKey(stationPublisherName, ownerAddress);
+
+  if (scope !== moderationScope) {
+    throw new Error('Listener uploads scope changed during moderation.');
+  }
 
   if (review.status === 'UNRESOLVED') {
     throw new Error(
@@ -892,13 +922,15 @@ export async function acceptSubmission(
     );
   }
 
-  reviews = reviews.map((entry) =>
-    entry.metadata.identifier === review.metadata.identifier &&
-    entry.metadata.publisherName === review.metadata.publisherName
-      ? { ...entry, status: 'ACCEPTED', moderation, moderationError: undefined }
-      : entry,
-  );
-  notify();
+  if (scope === moderationScope) {
+    reviews = reviews.map((entry) =>
+      entry.metadata.identifier === review.metadata.identifier &&
+      entry.metadata.publisherName === review.metadata.publisherName
+        ? { ...entry, status: 'ACCEPTED', moderation, moderationError: undefined }
+        : entry,
+    );
+    notify();
+  }
 
   return { status: 'accepted', track, moderation };
 }
@@ -911,6 +943,11 @@ export async function rejectSubmission(
   reason?: string,
 ): Promise<SubmissionModeration> {
   assertOwner(actorAddress, ownerAddress);
+  const moderationScope = submissionScopeKey(stationPublisherName, ownerAddress);
+
+  if (scope !== moderationScope) {
+    throw new Error('Listener uploads scope changed during moderation.');
+  }
 
   if (review.status === 'UNRESOLVED') {
     throw new Error(
@@ -940,13 +977,15 @@ export async function rejectSubmission(
 
   await publishModeration(moderation, stationPublisherName);
 
-  reviews = reviews.map((entry) =>
-    entry.metadata.identifier === review.metadata.identifier &&
-    entry.metadata.publisherName === review.metadata.publisherName
-      ? { ...entry, status: 'REJECTED', moderation, moderationError: undefined }
-      : entry,
-  );
-  notify();
+  if (scope === moderationScope) {
+    reviews = reviews.map((entry) =>
+      entry.metadata.identifier === review.metadata.identifier &&
+      entry.metadata.publisherName === review.metadata.publisherName
+        ? { ...entry, status: 'REJECTED', moderation, moderationError: undefined }
+        : entry,
+    );
+    notify();
+  }
 
   return moderation;
 }
