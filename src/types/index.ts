@@ -1,6 +1,7 @@
 export type {
   QdnResourceRef,
   Station,
+  StationMusicScope,
   Track,
   TrackSource,
   Playlist,

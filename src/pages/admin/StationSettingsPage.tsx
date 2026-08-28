@@ -12,6 +12,7 @@ import { ErrorState } from '../../components/ErrorState';
 import { useStation } from '../../features/station';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { NoticeAdminPanel } from '../../features/notices/components';
+import type { StationMusicScope } from '../../types/domain';
 
 function toLocalDateTimeInputValue(utcIso: string): string {
   const date = new Date(utcIso);
@@ -40,6 +41,7 @@ export default function StationSettingsPage() {
   const [epochLocalInput, setEpochLocalInput] = useState('');
   const [messagingEnabled, setMessagingEnabled] = useState(false);
   const [tipsEnabled, setTipsEnabled] = useState(false);
+  const [musicScope, setMusicScope] = useState<StationMusicScope | ''>('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -80,6 +82,7 @@ export default function StationSettingsPage() {
     );
     setMessagingEnabled(station?.messagingEnabled ?? false);
     setTipsEnabled(station?.tipsEnabled ?? false);
+    setMusicScope(station?.musicScope ?? '');
     setInitialized(true);
   }, [getVersions, initialized, loaded, playlists, playlistsLoaded, station]);
 
@@ -109,6 +112,7 @@ export default function StationSettingsPage() {
         stationEpochUtc: epochDate.toISOString(),
         messagingEnabled,
         tipsEnabled,
+        musicScope: musicScope || undefined,
       });
       setSaveSuccess(true);
     } catch (err) {
@@ -125,6 +129,7 @@ export default function StationSettingsPage() {
     epochLocalInput,
     messagingEnabled,
     tipsEnabled,
+    musicScope,
     saveStation,
   ]);
 
@@ -222,13 +227,20 @@ export default function StationSettingsPage() {
           </label>
 
           <label className="form-field">
-            Station epoch (local time)
+            AutoDJ timeline start
             <input
               type="datetime-local"
               value={epochLocalInput}
               onChange={(event) => setEpochLocalInput(event.target.value)}
             />
           </label>
+          <p className="form-field__hint">
+            Base reference time used to calculate deterministic AutoDJ playback. Normally set once
+            and left unchanged.
+          </p>
+          <p className="form-field__hint form-field__hint--accent">
+            Station time: {timezone.trim() || 'not set'}
+          </p>
 
           <label className="form-check">
             <input
@@ -246,6 +258,19 @@ export default function StationSettingsPage() {
               onChange={(event) => setTipsEnabled(event.target.checked)}
             />
             Enable tips/donations
+          </label>
+
+          <label className="form-field">
+            Music scope
+            <select
+              value={musicScope}
+              onChange={(event) => setMusicScope(event.target.value as StationMusicScope | '')}
+            >
+              <option value="">Not set</option>
+              <option value="INTERNATIONAL">International</option>
+              <option value="REGIONAL">Regional</option>
+              <option value="MIXED">Mixed</option>
+            </select>
           </label>
 
           {saveError && <p className="form-error">{saveError}</p>}

@@ -14,7 +14,7 @@ type SubmitMode = 'single' | 'bulk';
 
 export default function SubmitMusicPage() {
   const [mode, setMode] = useState<SubmitMode>('single');
-  const { auth } = useAuth();
+  const { auth, ownerName } = useAuth();
   const submitterScope = auth.status === 'authenticated' ? (auth.address ?? auth.name ?? '') : '';
 
   return (
@@ -39,7 +39,12 @@ export default function SubmitMusicPage() {
       {mode === 'single' ? (
         <SubmitMusicForm />
       ) : (
-        <BulkImportWorkspace role="listener" scope={submitterScope} />
+        <BulkImportWorkspace
+          role="listener"
+          scope={submitterScope}
+          actorName={auth.status === 'authenticated' ? (ownerName ?? auth.name ?? null) : null}
+          actorAddress={auth.status === 'authenticated' ? auth.address : null}
+        />
       )}
     </PageShell>
   );

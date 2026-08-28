@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../components/Modal';
+import { UtcTimeInput } from '../../../components/UtcTimeInput';
 import { useStation, useStationIdentity } from '../../station';
 import { usePlaylists } from '../../../hooks/usePlaylists';
 import { useLibrary } from '../../../hooks/useLibrary';
@@ -343,7 +344,7 @@ export function ScheduleEventEditorModal({
         </label>
 
         <label className="form-field">
-          Local date ({timeZone || 'station timezone'})
+          Date ({timeZone || 'station timezone'})
           <input
             type="date"
             value={date}
@@ -353,19 +354,19 @@ export function ScheduleEventEditorModal({
 
         <div className="schedule-editor__time-row">
           <label className="form-field">
-            Start time
-            <input
-              type="time"
+            Start time ({timeZone || 'station timezone'})
+            <UtcTimeInput
               value={startTime}
-              onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
+              onChange={setStartTime}
+              suffix={timeZone || 'station timezone'}
             />
           </label>
           <label className="form-field">
-            End time
-            <input
-              type="time"
+            End time ({timeZone || 'station timezone'})
+            <UtcTimeInput
               value={endTime}
-              onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
+              onChange={setEndTime}
+              suffix={timeZone || 'station timezone'}
             />
           </label>
         </div>

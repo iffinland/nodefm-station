@@ -16,6 +16,7 @@ import { useRequestShow } from './useRequestShow';
 import { materializeRequestShowOccurrenceAction } from './requestShowStore';
 import type { ScheduleEvent, Track } from '../../../types/domain';
 import { isValidDurationMs } from '../../../utils/duration';
+import { formatUtcDateTime } from '../../../utils/utcTime';
 
 export type RequestShowAdminPanelProps = {
   events: readonly ScheduleEvent[];
@@ -335,7 +336,7 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
                   <div>
                     <strong>{event.title ?? 'Request Show'}</strong>
                     <span>
-                      {new Date(event.startUtc).toLocaleString()} ·{' '}
+                      {formatUtcDateTime(event.startUtc)} ·{' '}
                       {occurrence ? `${occurrence.tracks.length} tracks generated` : 'missing'}
                     </span>
                   </div>

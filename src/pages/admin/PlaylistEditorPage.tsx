@@ -20,6 +20,7 @@ import { useLibrary } from '../../hooks/useLibrary';
 import { useStation, useStationIdentity } from '../../features/station';
 import { useScheduler } from '../../features/scheduling';
 import { formatDurationMs, calculateTotalDurationMs } from '../../utils/duration';
+import { rotateArray, shuffleArray } from '../../utils/deterministicShuffle';
 import {
   isPlaylistPublishable,
   createTrackSnapshot,
@@ -251,6 +252,14 @@ export default function PlaylistEditorPage() {
     setDragIndex(null);
   }, []);
 
+  const handleShuffleDraft = useCallback(() => {
+    setDraftTracks((previous) => shuffleArray(previous));
+  }, []);
+
+  const handleRotateDraft = useCallback(() => {
+    setDraftTracks((previous) => rotateArray(previous, 1));
+  }, []);
+
   const handlePublish = useCallback(async () => {
     if (!playlist || !ownerAddress) return;
     setPublishing(true);
@@ -462,6 +471,12 @@ export default function PlaylistEditorPage() {
             onClick={() => setShowAddTracks(!showAddTracks)}
           >
             {showAddTracks ? 'Close' : 'Add Tracks'}
+          </button>
+          <button className="button button--secondary" type="button" onClick={handleShuffleDraft}>
+            Shuffle
+          </button>
+          <button className="button button--secondary" type="button" onClick={handleRotateDraft}>
+            Rotate Start
           </button>
           <button
             className="button button--primary"

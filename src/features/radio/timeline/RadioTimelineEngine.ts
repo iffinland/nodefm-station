@@ -23,6 +23,13 @@ import {
   locateTrackAtPosition,
   parseUtcTimestampMs,
 } from './timelineMath';
+import {
+  avoidImmediateTrackRepeat,
+  buildAutoDjSessionPermutationSeed,
+  buildScheduledPlaylistPermutationSeed,
+  permutePlaylistVersionTracks,
+  resolveAutoDjSessionBoundaryUtcMs,
+} from './playbackPermutation';
 
 type ActiveEventResolution =
   | { status: 'none' }
@@ -174,6 +181,7 @@ function resolvePlaylistSource(
   versionId: string,
   playlistVersions: TimelineInput['playlistVersions'],
   scheduleEvent: ScheduleEvent,
+  stationId: string,
 ): SourceResolution {
   const version = playlistVersions[versionId];
 
@@ -213,19 +221,81 @@ function resolvePlaylistSource(
     };
   }
 
+  const occurrenceStartUtcMs = parseUtcTimestampMs(scheduleEvent.startUtc)!;
+  const playbackTracks = permutePlaylistVersionTracks(
+    version.tracks,
+    buildScheduledPlaylistPermutationSeed(
+      stationId,
+      version.versionId,
+      scheduleEvent.eventId,
+      occurrenceStartUtcMs,
+    ),
+  );
+
   return {
     status: 'ok',
     source: {
       kind: 'playlist',
-      sourceStartUtcMs: parseUtcTimestampMs(scheduleEvent.startUtc)!,
+      sourceStartUtcMs: occurrenceStartUtcMs,
       sourceEndUtcMs: parseUtcTimestampMs(scheduleEvent.endUtc)!,
-      tracks: version.tracks,
+      tracks: playbackTracks,
       playlistId: version.playlistId,
       playlistVersionId: version.versionId,
       scheduleEventId: scheduleEvent.eventId,
       programTitle: scheduleEvent.title,
     },
   };
+}
+
+function resolvePreviousScheduledFinalTrackId(
+  nowUtcMs: number,
+  input: TimelineInput,
+): string | null {
+  let latestEvent: ScheduleEvent | null = null;
+  let latestEndUtcMs: number | null = null;
+
+  for (const event of input.scheduleEvents) {
+    const endUtcMs = parseUtcTimestampMs(event.endUtc);
+
+    if (endUtcMs === null || endUtcMs > nowUtcMs) {
+      continue;
+    }
+
+    if (latestEndUtcMs === null || endUtcMs > latestEndUtcMs) {
+      latestEndUtcMs = endUtcMs;
+      latestEvent = event;
+    }
+  }
+
+  if (!latestEvent || latestEndUtcMs === null || !input.station) {
+    return null;
+  }
+
+  const previousNowUtcMs = latestEndUtcMs - 1;
+  const sourceResolution =
+    latestEvent.source.type === 'playlist'
+      ? resolvePlaylistSource(
+          latestEvent.source.playlistVersionId,
+          input.playlistVersions,
+          latestEvent,
+          input.station.stationId,
+        )
+      : resolveDynamicSource(latestEvent, input.dynamicOccurrences);
+
+  if (sourceResolution.status === 'error') {
+    return null;
+  }
+
+  const source = sourceResolution.source;
+  const totalDurationMs = getPlaylistDurationMs(source.tracks);
+
+  if (!Number.isFinite(totalDurationMs) || totalDurationMs <= 0) {
+    return null;
+  }
+
+  const positionMs = floorMod(previousNowUtcMs - source.sourceStartUtcMs, totalDurationMs);
+  const located = locateTrackAtPosition(source.tracks, positionMs);
+  return located?.track.trackId ?? null;
 }
 
 function resolveDynamicSource(
@@ -311,11 +381,12 @@ function resolveDynamicSource(
 }
 
 function resolveDefaultSource(
+  nowUtcMs: number,
   station: Station,
-  playlistVersions: TimelineInput['playlistVersions'],
+  input: TimelineInput,
 ): SourceResolution {
   const versionId = station.defaultRotationPlaylistVersionId;
-  const version = playlistVersions[versionId];
+  const version = input.playlistVersions[versionId];
 
   if (!version) {
     return {
@@ -350,13 +421,25 @@ function resolveDefaultSource(
     };
   }
 
+  const sessionBoundaryUtcMs = resolveAutoDjSessionBoundaryUtcMs(
+    nowUtcMs,
+    parseUtcTimestampMs(station.stationEpochUtc)!,
+    input.scheduleEvents,
+  );
+  const basePlaybackTracks = permutePlaylistVersionTracks(
+    version.tracks,
+    buildAutoDjSessionPermutationSeed(station.stationId, version.versionId, sessionBoundaryUtcMs),
+  );
+  const previousTrackId = resolvePreviousScheduledFinalTrackId(nowUtcMs, input);
+  const playbackTracks = avoidImmediateTrackRepeat(basePlaybackTracks, previousTrackId);
+
   return {
     status: 'ok',
     source: {
       kind: 'playlist',
-      sourceStartUtcMs: parseUtcTimestampMs(station.stationEpochUtc)!,
+      sourceStartUtcMs: sessionBoundaryUtcMs,
       sourceEndUtcMs: undefined,
-      tracks: version.tracks,
+      tracks: playbackTracks,
       playlistId: version.playlistId,
       playlistVersionId: version.versionId,
     },
@@ -379,11 +462,16 @@ function resolveActiveSource(nowUtcMs: number, input: TimelineInput): SourceReso
   if (eventResolution.status === 'ok') {
     const event = eventResolution.event;
     return event.source.type === 'playlist'
-      ? resolvePlaylistSource(event.source.playlistVersionId, input.playlistVersions, event)
+      ? resolvePlaylistSource(
+          event.source.playlistVersionId,
+          input.playlistVersions,
+          event,
+          station.stationId,
+        )
       : resolveDynamicSource(event, input.dynamicOccurrences);
   }
 
-  return resolveDefaultSource(station, input.playlistVersions);
+  return resolveDefaultSource(nowUtcMs, station, input);
 }
 
 function buildLiveState(source: PlaybackSourceTimeline, nowUtcMs: number): TimelineResult {

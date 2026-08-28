@@ -15,6 +15,7 @@ import { formatDurationMs } from '../../../utils/duration';
 import { buildQdnUrl, openQdnAddress } from '../../../qortium/navigation';
 import { TrackCover } from '../../library/components/TrackCover';
 import { useLibrary } from '../../../hooks/useLibrary';
+import { PaginationControls, paginateItems, usePagination } from '../../pagination';
 import type { ListenerSubmissionReview } from '../services/submissionStore';
 import { useListenerSubmissions } from '../useListenerSubmissions';
 
@@ -31,6 +32,8 @@ export function ListenerUploadsAdminPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const pagination = usePagination(reviews.length);
+  const pageReviews = paginateItems(reviews, pagination.pageIndex, pagination.pageSize);
 
   const openAction = (review: ListenerSubmissionReview, type: ActionState['type']) => {
     setAction({ review, type });
@@ -117,7 +120,7 @@ export function ListenerUploadsAdminPanel() {
         <p className="listener-uploads__empty">No listener submissions have been published yet.</p>
       ) : (
         <div className="listener-uploads__list">
-          {reviews.map((review) => (
+          {pageReviews.map((review) => (
             <SubmissionReviewCard
               key={`${review.metadata.publisherName}\u0000${review.metadata.identifier}`}
               review={review}
@@ -127,6 +130,16 @@ export function ListenerUploadsAdminPanel() {
           ))}
         </div>
       )}
+
+      {reviews.length > 0 ? (
+        <PaginationControls
+          totalItems={reviews.length}
+          pageIndex={pagination.pageIndex}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.setPageIndex}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
 
       {action ? (
         <Modal

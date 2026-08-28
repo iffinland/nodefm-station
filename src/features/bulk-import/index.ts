@@ -131,6 +131,46 @@ export {
 } from './services/bulkImportStorage';
 
 export {
+  createHome2BulkPublicationAdapter,
+  Home2ReconciliationRequiredError,
+  Home2AndroidSequentialAcquisitionRequiredError,
+} from './home2BulkPublicationAdapter';
+export type {
+  Home2BulkPublicationAdapter,
+  Home2BulkPublicationPlatform,
+  Home2BridgeTransport,
+  Home2RowAcquisitionResult,
+} from './home2BulkPublicationAdapter';
+
+export {
+  applyBulkPublicationSourceAcquisitionToBatch,
+  applyBulkPublicationRowResultToBatch,
+  getHome2RowPublicationUiState,
+  getHome2ResourcePublicationUiState,
+  isHome2AudioPublished,
+  isHome2AudioUnknown,
+  isHome2ResourcePublished,
+  isHome2ResourceUnknown,
+  isHome2MetadataReadyToExport,
+  home2ResourcePublicationFailureMessage,
+  home2RowPublicationFailureMessage,
+} from './home2PublicationReducer';
+export type {
+  Home2ResourcePublicationUiState,
+  Home2RowPublicationUiState,
+} from './home2PublicationReducer';
+
+export {
+  buildBulkImportMetadataDocument,
+  computeBulkImportMetadataFingerprint,
+  createBulkImportMetadataArtifact,
+  downloadBulkImportMetadataArtifact,
+  getBulkImportMetadataExportFilename,
+  isBulkImportMetadataArtifactCurrent,
+} from './metadataExport';
+export type { BulkImportMetadataArtifact } from './metadataExport';
+
+export {
   extractEmbeddedAudioMetadata,
   metadataFromMusicMetadata,
   normalizeEmbeddedGenres,

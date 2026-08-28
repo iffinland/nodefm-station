@@ -10,7 +10,11 @@ import { describe, it, expect } from 'vitest';
 import { createPlaylistVersion } from '../features/playlists/services/playlistService';
 import { createScheduleEvent } from '../features/scheduling/services/scheduleService';
 import { compileScheduleRecurrence } from '../features/scheduling/services/recurrenceCompiler';
-import { resolveLiveState } from '../features/radio/timeline';
+import {
+  buildScheduledPlaylistPermutationSeed,
+  permutePlaylistVersionTracks,
+  resolveLiveState,
+} from '../features/radio/timeline';
 import type { PlaylistVersion, ScheduleEvent, Station } from '../types/domain';
 import type { TimelineInput } from '../features/radio/timeline';
 
@@ -89,6 +93,15 @@ describe('scheduler-generated events drive the production timeline', () => {
     const endMs = EPOCH + 2_000_000;
     const event = playlistEvent('event-1', startMs, endMs);
     const ctx = input([event], { 'scheduled-version': scheduledVersion });
+    const playbackTracks = permutePlaylistVersionTracks(
+      scheduledVersion.tracks,
+      buildScheduledPlaylistPermutationSeed(
+        'station-1',
+        'scheduled-version',
+        event.eventId,
+        startMs,
+      ),
+    );
 
     expect(resolveLiveState(startMs - 1, ctx)).toMatchObject({
       status: 'ready',
@@ -98,14 +111,14 @@ describe('scheduler-generated events drive the production timeline', () => {
       status: 'ready',
       live: {
         mode: 'scheduled',
-        trackId: 'S-A',
+        trackId: playbackTracks[0].trackId,
         offsetMs: 0,
         scheduleEventId: event.eventId,
       },
     });
     expect(resolveLiveState(startMs + 1, ctx)).toMatchObject({
       status: 'ready',
-      live: { mode: 'scheduled', trackId: 'S-A', offsetMs: 1 },
+      live: { mode: 'scheduled', trackId: playbackTracks[0].trackId, offsetMs: 1 },
     });
     expect(resolveLiveState(endMs - 1, ctx)).toMatchObject({
       status: 'ready',
@@ -127,6 +140,15 @@ describe('scheduler-generated events drive the production timeline', () => {
     const ctx = input([first, second], {
       'scheduled-version': scheduledVersion,
     });
+    const secondPlaybackTracks = permutePlaylistVersionTracks(
+      scheduledVersion.tracks,
+      buildScheduledPlaylistPermutationSeed(
+        'station-1',
+        'scheduled-version',
+        second.eventId,
+        EPOCH + 2_000_000,
+      ),
+    );
 
     expect(resolveLiveState(EPOCH + 1_999_999, ctx)).toMatchObject({
       status: 'ready',
@@ -134,7 +156,11 @@ describe('scheduler-generated events drive the production timeline', () => {
     });
     expect(resolveLiveState(EPOCH + 2_000_000, ctx)).toMatchObject({
       status: 'ready',
-      live: { scheduleEventId: second.eventId, trackId: 'S-A', offsetMs: 0 },
+      live: {
+        scheduleEventId: second.eventId,
+        trackId: secondPlaybackTracks[0].trackId,
+        offsetMs: 0,
+      },
     });
   });
 

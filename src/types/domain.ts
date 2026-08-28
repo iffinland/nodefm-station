@@ -34,6 +34,13 @@ export type Station = {
   ownerName?: string;
   ownerAddress: string;
 
+  /**
+   * Optional station programming identity label. This is intentionally
+   * separate from UI language, artist nationality, track language,
+   * timezone, and genre.
+   */
+  musicScope?: StationMusicScope;
+
   logo?: QdnResourceRef;
   heroImage?: QdnResourceRef;
 
@@ -48,6 +55,8 @@ export type Station = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type StationMusicScope = 'INTERNATIONAL' | 'REGIONAL' | 'MIXED';
 
 // ── Track ───────────────────────────────────────────────────────────
 

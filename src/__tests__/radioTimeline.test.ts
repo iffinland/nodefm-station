@@ -8,7 +8,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { createPlaylistVersion } from '../features/playlists/services/playlistService';
-import { floorMod, getUpcomingTracks, resolveLiveState } from '../features/radio/timeline';
+import {
+  buildAutoDjSessionPermutationSeed,
+  floorMod,
+  getUpcomingTracks,
+  permutePlaylistVersionTracks,
+  resolveLiveState,
+} from '../features/radio/timeline';
 import type {
   DynamicProgramOccurrence,
   PlaylistVersion,
@@ -119,6 +125,10 @@ describe('default rotation', () => {
     { trackId: 'D', durationMs: 310_000 },
   ];
   const defaultVersion = version('default-playlist', 'default-version', tracks);
+  const defaultPlaybackTracks = permutePlaylistVersionTracks(
+    defaultVersion.tracks,
+    buildAutoDjSessionPermutationSeed('station-1', 'default-version', EPOCH),
+  );
   const ctx = input({
     playlistVersions: { 'default-version': defaultVersion },
   });
@@ -130,11 +140,11 @@ describe('default rotation', () => {
         status: 'ready',
         live: expect.objectContaining({
           mode: 'default-rotation',
-          trackId: 'A',
+          trackId: defaultPlaybackTracks[0].trackId,
           offsetMs: 0,
           trackIndex: 0,
           trackStartUtcMs: EPOCH,
-          nextTransitionUtcMs: EPOCH + 220_000,
+          nextTransitionUtcMs: EPOCH + defaultPlaybackTracks[0].durationMs,
         }),
       }),
     );
@@ -145,25 +155,63 @@ describe('default rotation', () => {
     expect(result.status).toBe('ready');
     if (result.status !== 'ready') return;
 
-    expect(result.live.trackId).toBe('D');
-    expect(result.live.offsetMs).toBe(309_999);
+    const lastTrack = defaultPlaybackTracks[defaultPlaybackTracks.length - 1];
+    expect(result.live.trackId).toBe(lastTrack.trackId);
+    expect(result.live.offsetMs).toBe(lastTrack.durationMs - 1);
     expect(result.live.nextTransitionUtcMs).toBe(EPOCH);
   });
 
-  it.each([
-    [EPOCH + 219_999, 'A', 219_999, EPOCH + 220_000],
-    [EPOCH + 220_000, 'B', 0, EPOCH + 475_000],
-    [EPOCH + 220_001, 'B', 1, EPOCH + 475_000],
-    [EPOCH + 300_000, 'B', 80_000, EPOCH + 475_000],
-    [EPOCH + 959_999, 'D', 309_999, EPOCH + 960_000],
-    [EPOCH + 960_000, 'A', 0, EPOCH + 1_180_000],
-  ])('resolves track boundaries and wrap at %s', (nowMs, trackId, offsetMs, nextTransition) => {
-    const result = resolveLiveState(nowMs, ctx);
-    expect(result.status).toBe('ready');
-    if (result.status !== 'ready') return;
-    expect(result.live.trackId).toBe(trackId);
-    expect(result.live.offsetMs).toBe(offsetMs);
-    expect(result.live.nextTransitionUtcMs).toBe(nextTransition);
+  it('resolves track boundaries and wrap using the derived AutoDJ order', () => {
+    const positions = [
+      { trackId: defaultPlaybackTracks[0].trackId, offsetMs: 0 },
+      {
+        trackId: defaultPlaybackTracks[0].trackId,
+        offsetMs: defaultPlaybackTracks[0].durationMs - 1,
+      },
+      { trackId: defaultPlaybackTracks[1].trackId, offsetMs: 0 },
+      {
+        trackId: defaultPlaybackTracks[1].trackId,
+        offsetMs: Math.min(1, defaultPlaybackTracks[1].durationMs - 1),
+      },
+      {
+        trackId: defaultPlaybackTracks[1].trackId,
+        offsetMs: Math.min(80_000, defaultPlaybackTracks[1].durationMs - 1),
+      },
+      {
+        trackId: defaultPlaybackTracks[defaultPlaybackTracks.length - 1].trackId,
+        offsetMs: defaultPlaybackTracks[defaultPlaybackTracks.length - 1].durationMs - 1,
+      },
+      { trackId: defaultPlaybackTracks[0].trackId, offsetMs: 0 },
+    ];
+    const nows = [
+      EPOCH,
+      EPOCH + defaultPlaybackTracks[0].durationMs - 1,
+      EPOCH + defaultPlaybackTracks[0].durationMs,
+      EPOCH + defaultPlaybackTracks[0].durationMs + 1,
+      EPOCH + defaultPlaybackTracks[0].durationMs + 80_000,
+      EPOCH + defaultVersion.totalDurationMs - 1,
+      EPOCH + defaultVersion.totalDurationMs,
+    ];
+
+    nows.forEach((nowMs, index) => {
+      const result = resolveLiveState(nowMs, ctx);
+      expect(result.status).toBe('ready');
+      if (result.status !== 'ready') return;
+      expect(result.live.trackId).toBe(positions[index].trackId);
+      expect(result.live.offsetMs).toBe(positions[index].offsetMs);
+    });
+  });
+
+  it('resolves track boundaries and wrap at each cumulative boundary', () => {
+    let cursor = EPOCH;
+    defaultPlaybackTracks.forEach((track) => {
+      const result = resolveLiveState(cursor, ctx);
+      expect(result.status).toBe('ready');
+      if (result.status !== 'ready') return;
+      expect(result.live.trackId).toBe(track.trackId);
+      expect(result.live.offsetMs).toBe(0);
+      cursor += track.durationMs;
+    });
   });
 
   it('handles many full rotations and unequal durations', () => {
@@ -172,8 +220,13 @@ describe('default rotation', () => {
     const result = resolveLiveState(nowMs, ctx);
     expect(result.status).toBe('ready');
     if (result.status !== 'ready') return;
-    expect(result.live.trackId).toBe('B');
-    expect(result.live.offsetMs).toBe(12_345);
+    expect(result.live.trackId).toBe(defaultPlaybackTracks[1].trackId);
+    expect(result.live.offsetMs).toBe(
+      rotations * 960_000 +
+        220_000 +
+        12_345 -
+        (rotations * 960_000 + defaultPlaybackTracks[0].durationMs),
+    );
   });
 
   it('repeats one-track rotations at exact boundaries', () => {
@@ -556,6 +609,10 @@ describe('upcoming track resolution', () => {
     { trackId: 'B', durationMs: 60_000 },
     { trackId: 'C', durationMs: 60_000 },
   ]);
+  const defaultPlaybackTracks = permutePlaylistVersionTracks(
+    defaultVersion.tracks,
+    buildAutoDjSessionPermutationSeed('station-1', 'default-version', EPOCH),
+  );
 
   it('returns the next tracks in the same default rotation', () => {
     const result = getUpcomingTracks(
@@ -568,7 +625,12 @@ describe('upcoming track resolution', () => {
 
     expect(result.status).toBe('ready');
     if (result.status !== 'ready') return;
-    expect(result.tracks.map((track) => track.trackId)).toEqual(['B', 'C', 'A', 'B']);
+    expect(result.tracks.map((track) => track.trackId)).toEqual([
+      defaultPlaybackTracks[1].trackId,
+      defaultPlaybackTracks[2].trackId,
+      defaultPlaybackTracks[0].trackId,
+      defaultPlaybackTracks[1].trackId,
+    ]);
     expect(result.tracks.map((track) => track.expectedStartUtcMs)).toEqual([
       EPOCH + 60_000,
       EPOCH + 120_000,
@@ -593,15 +655,20 @@ describe('upcoming track resolution', () => {
         'scheduled-version': scheduledVersion,
       },
     });
+    const eventEnd = EPOCH + 100_000;
+    const boundaryPlaybackTracks = permutePlaylistVersionTracks(
+      defaultVersion.tracks,
+      buildAutoDjSessionPermutationSeed('station-1', 'default-version', eventEnd),
+    );
 
     const result = getUpcomingTracks(EPOCH + 70_000, 3, ctx);
     expect(result.status).toBe('ready');
     if (result.status !== 'ready') return;
 
     expect(result.tracks).toMatchObject([
-      { trackId: 'C', expectedStartUtcMs: EPOCH + 120_000 },
-      { trackId: 'A', expectedStartUtcMs: EPOCH + 180_000 },
-      { trackId: 'B', expectedStartUtcMs: EPOCH + 240_000 },
+      { trackId: boundaryPlaybackTracks[1].trackId, expectedStartUtcMs: eventEnd + 60_000 },
+      { trackId: boundaryPlaybackTracks[2].trackId, expectedStartUtcMs: eventEnd + 120_000 },
+      { trackId: boundaryPlaybackTracks[0].trackId, expectedStartUtcMs: eventEnd + 180_000 },
     ]);
   });
 
@@ -624,6 +691,10 @@ describe('timeline invariants', () => {
     { trackId: 'B', durationMs: 77_000 },
     { trackId: 'C', durationMs: 200_000 },
   ]);
+  const playbackTracks = permutePlaylistVersionTracks(
+    versionA.tracks,
+    buildAutoDjSessionPermutationSeed('station-1', 'default-version', EPOCH),
+  );
   const ctx = input({ playlistVersions: { 'default-version': versionA } });
 
   it('keeps the elapsed offset inside the selected track duration', () => {
@@ -632,7 +703,7 @@ describe('timeline invariants', () => {
       expect(result.status).toBe('ready');
       if (result.status !== 'ready') continue;
 
-      const track = versionA.tracks[result.live.trackIndex];
+      const track = playbackTracks[result.live.trackIndex];
       expect(result.live.trackId).toBe(track.trackId);
       expect(result.live.offsetMs).toBeGreaterThanOrEqual(0);
       expect(result.live.offsetMs).toBeLessThan(track.durationMs);

@@ -5,6 +5,13 @@ export {
 } from './RadioTimelineEngine';
 export { getNowUtcMs, setNowUtcMsProviderForTests } from './clock';
 export { floorMod, parseUtcTimestampMs, locateTrackAtPosition } from './timelineMath';
+export {
+  buildScheduledPlaylistPermutationSeed,
+  buildAutoDjSessionPermutationSeed,
+  resolveAutoDjSessionBoundaryUtcMs,
+  permutePlaylistVersionTracks,
+  avoidImmediateTrackRepeat,
+} from './playbackPermutation';
 export type {
   LiveState,
   UpcomingTrack,

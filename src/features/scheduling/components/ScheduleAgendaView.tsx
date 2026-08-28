@@ -7,7 +7,7 @@
 
 import { useMemo } from 'react';
 import type { ScheduleEvent } from '../../../types/domain';
-import { formatZonedDateInput, formatZonedTimeInput } from '../services/timezone';
+import { formatScheduleTimeDisplay } from '../../../utils/stationTime';
 
 export type ScheduleAgendaViewProps = {
   events: ScheduleEvent[];
@@ -31,30 +31,34 @@ export function ScheduleAgendaView({ events, timeZone, onEventClick }: ScheduleA
 
   return (
     <ol className="schedule-agenda">
-      {sorted.map((event) => (
-        <li key={event.eventId}>
-          <button
-            className="schedule-agenda__item"
-            type="button"
-            onClick={() => onEventClick(event)}
-          >
-            <span className="schedule-agenda__date">
-              {formatZonedDateInput(Date.parse(event.startUtc), timeZone)}
-            </span>
-            <span className="schedule-agenda__time">
-              {formatZonedTimeInput(Date.parse(event.startUtc), timeZone)}–
-              {formatZonedTimeInput(Date.parse(event.endUtc), timeZone)}
-            </span>
-            <span className="schedule-agenda__title">
-              {event.title ?? 'Untitled program'}
-              {event.recurrenceId ? ' · recurring' : ''}
-            </span>
-            <span className="schedule-agenda__source">
-              {event.source.type === 'playlist' ? 'Playlist version' : 'Dynamic program'}
-            </span>
-          </button>
-        </li>
-      ))}
+      {sorted.map((event) => {
+        const display = formatScheduleTimeDisplay(event.startUtc, event.endUtc, timeZone);
+
+        return (
+          <li key={event.eventId}>
+            <button
+              className="schedule-agenda__item"
+              type="button"
+              onClick={() => onEventClick(event)}
+            >
+              <span className="schedule-agenda__date">{display.stationDate}</span>
+              <span className="schedule-agenda__time">
+                <span className="schedule-agenda__time-main">
+                  {display.stationTimeRange} · {display.durationMinutes}
+                </span>
+                <span className="schedule-agenda__time-utc">{display.utcTimeRange}</span>
+              </span>
+              <span className="schedule-agenda__title">
+                {event.title ?? 'Untitled program'}
+                {event.recurrenceId ? ' · recurring' : ''}
+              </span>
+              <span className="schedule-agenda__source">
+                {event.source.type === 'playlist' ? 'Playlist version' : 'Dynamic program'}
+              </span>
+            </button>
+          </li>
+        );
+      })}
     </ol>
   );
 }

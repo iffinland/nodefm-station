@@ -18,6 +18,7 @@ import {
   loadPublicPlaylists,
   type PublicPlaylist,
 } from '../features/playlists/services/publicPlaylistService';
+import { PaginationControls, paginateItems, usePagination } from '../features/pagination';
 
 export default function PlaylistsPage() {
   const { publisherName, loading: stationLoading } = useStation();
@@ -26,6 +27,8 @@ export default function PlaylistsPage() {
   const [error, setError] = useState<string | null>(null);
   const [incomplete, setIncomplete] = useState(false);
   const [shareTarget, setShareTarget] = useState<ShareTargetInput | null>(null);
+  const pagination = usePagination(playlists.length);
+  const pagePlaylists = paginateItems(playlists, pagination.pageIndex, pagination.pageSize);
 
   const load = useCallback(async (name: string) => {
     setLoading(true);
@@ -88,7 +91,7 @@ export default function PlaylistsPage() {
               </p>
             )}
             <ul className="public-playlists__list">
-              {playlists.map((playlist) => (
+              {pagePlaylists.map((playlist) => (
                 <li
                   key={`${playlist.publisherName}-${playlist.playlistId}`}
                   className={`public-playlist-card${
@@ -141,6 +144,15 @@ export default function PlaylistsPage() {
                 </li>
               ))}
             </ul>
+            {playlists.length > 0 ? (
+              <PaginationControls
+                totalItems={playlists.length}
+                pageIndex={pagination.pageIndex}
+                pageSize={pagination.pageSize}
+                onPageChange={pagination.setPageIndex}
+                onPageSizeChange={pagination.setPageSize}
+              />
+            ) : null}
           </>
         )}
         {shareTarget && <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />}

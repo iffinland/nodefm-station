@@ -7,11 +7,16 @@
 
 import { PageShell } from '../components/PageShell';
 import { useLiveRadioPlayerContext } from '../features/radio/player';
-import { useStation } from '../features/station';
+import { StationMusicScopeBadge, useStation } from '../features/station';
 import { useAuth } from '../app/providers/authContext';
 import { useLikes } from '../features/likes/useLikes';
 import { formatDurationMs } from '../utils/duration';
-import { isValidIanaTimeZone } from '../features/scheduling/services/timezone';
+import { formatUtcTime } from '../utils/utcTime';
+import {
+  formatScheduleTimeDisplay,
+  formatStationTimeContext,
+  formatStationTimeInput,
+} from '../utils/stationTime';
 import { useState } from 'react';
 import type { Track } from '../types/domain';
 import { MessageOwnerModal } from '../features/messaging';
@@ -24,6 +29,7 @@ export default function RadioPage() {
   const { playerState, timeline, playbackError, retry } = useLiveRadioPlayerContext();
   const { station, loading: stationLoading, refresh: refreshStation } = useStation();
   const { auth } = useAuth();
+  const stationTimeZone = station?.timezone ?? '';
   const liveState = timeline.liveState;
   const currentTrack = timeline.currentTrack;
   const currentTrackId = currentTrack?.trackId ?? '';
@@ -41,8 +47,6 @@ export default function RadioPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
-  const scheduleTimeZone =
-    station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
 
   const handleLike = async () => {
     if (!currentTrackId) {
@@ -99,6 +103,7 @@ export default function RadioPage() {
               {liveState?.programTitle && (
                 <p className="now-playing__program">{liveState.programTitle}</p>
               )}
+              <StationMusicScopeBadge musicScope={station?.musicScope} />
               {currentTrack && (
                 <p className="now-playing__track-time">
                   {formatDurationMs(currentTrack.durationMs)} track duration
@@ -227,7 +232,12 @@ export default function RadioPage() {
 
         {/* Upcoming Section */}
         <section className="radio-page__upcoming">
-          <h3>Coming Up</h3>
+          <h3>
+            Coming Up
+            <span className="radio-page__section-context">
+              {formatStationTimeContext(stationTimeZone)}
+            </span>
+          </h3>
           {timeline.dataLoading ? (
             <p className="radio-page__placeholder">Loading upcoming tracks…</p>
           ) : timeline.upcoming.length > 0 ? (
@@ -238,11 +248,11 @@ export default function RadioPage() {
                     {item.title ?? item.trackId}
                     {item.artist ? ` — ${item.artist}` : ''}
                   </span>
-                  <span className="radio-page__upcoming-time">
-                    {new Date(item.expectedStartUtcMs).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                  <span
+                    className="radio-page__upcoming-time"
+                    title={`UTC ${formatUtcTime(item.expectedStartUtcMs)}`}
+                  >
+                    {formatStationTimeInput(item.expectedStartUtcMs, stationTimeZone)}
                   </span>
                 </li>
               ))}
@@ -263,21 +273,30 @@ export default function RadioPage() {
                 .filter((event) => Date.parse(event.endUtc) > timeline.nowUtcMs)
                 .sort((left, right) => Date.parse(left.startUtc) - Date.parse(right.startUtc))
                 .slice(0, 6)
-                .map((event) => (
-                  <li key={event.eventId}>
-                    <span className="radio-page__upcoming-track">
-                      {event.title ?? 'Scheduled program'}
-                    </span>
-                    <span className="radio-page__upcoming-time">
-                      {new Intl.DateTimeFormat([], {
-                        timeZone: scheduleTimeZone,
-                        weekday: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      }).format(Date.parse(event.startUtc))}
-                    </span>
-                  </li>
-                ))}
+                .map((event) => {
+                  const display = formatScheduleTimeDisplay(
+                    event.startUtc,
+                    event.endUtc,
+                    stationTimeZone,
+                  );
+
+                  return (
+                    <li key={event.eventId}>
+                      <span className="radio-page__upcoming-track">
+                        {event.title ?? 'Scheduled program'}
+                      </span>
+                      <span className="radio-page__upcoming-time radio-page__upcoming-time--stacked">
+                        <span className="radio-page__upcoming-time-main">
+                          {display.stationDate} · {display.stationTimeRange} ·{' '}
+                          {display.durationMinutes}
+                        </span>
+                        <span className="radio-page__upcoming-time-utc">
+                          {display.utcTimeRange}
+                        </span>
+                      </span>
+                    </li>
+                  );
+                })}
             </ol>
           )}
         </section>

@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
+import { UtcTimeInput } from '../../../components/UtcTimeInput';
 import { useStation, useStationIdentity } from '../../station';
 import { usePlaylists } from '../../../hooks/usePlaylists';
 import { useLibrary } from '../../../hooks/useLibrary';
@@ -374,11 +375,11 @@ export function RecurrenceEditorModal({ mode, recurrence, onClose }: RecurrenceE
 
         <div className="schedule-editor__time-row">
           <label className="form-field">
-            Local start time ({timeZone || 'station timezone'})
-            <input
-              type="time"
+            Start time ({timeZone || 'station timezone'})
+            <UtcTimeInput
               value={startTime}
-              onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
+              onChange={setStartTime}
+              suffix={timeZone || 'station timezone'}
             />
           </label>
           <label className="form-field">

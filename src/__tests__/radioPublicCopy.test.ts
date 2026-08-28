@@ -24,6 +24,6 @@ describe('public radio schedule copy', () => {
   });
 
   it('keeps the distinct Coming Up section unchanged', () => {
-    expect(radioPageSource).toContain('<h3>Coming Up</h3>');
+    expect(radioPageSource).toMatch(/<h3>\s*Coming Up\s*<span/);
   });
 });

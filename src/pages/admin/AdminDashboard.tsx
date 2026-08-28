@@ -20,7 +20,7 @@ import {
   getPublishedPlaylistCount,
   resolveDashboardCount,
 } from '../../features/admin-dashboard';
-import { isValidIanaTimeZone } from '../../features/scheduling/services/timezone';
+import { formatUtcDateTime } from '../../utils/utcTime';
 
 export default function AdminDashboard() {
   const { timeline } = useLiveRadioPlayerContext();
@@ -51,8 +51,6 @@ export default function AdminDashboard() {
   const nextEvent = timeline.scheduleEvents
     .filter((event) => Date.parse(event.startUtc) > timeline.nowUtcMs)
     .sort((left, right) => Date.parse(left.startUtc) - Date.parse(right.startUtc))[0];
-  const scheduleTimeZone =
-    station?.timezone && isValidIanaTimeZone(station.timezone) ? station.timezone : 'UTC';
 
   const libraryCount = resolveDashboardCount(
     {
@@ -134,13 +132,7 @@ export default function AdminDashboard() {
             <h3>Next Program</h3>
             <p className="admin-dashboard__value">{nextEvent?.title ?? '—'}</p>
             <p className="admin-dashboard__hint">
-              {nextEvent
-                ? new Intl.DateTimeFormat([], {
-                    timeZone: scheduleTimeZone,
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  }).format(Date.parse(nextEvent.startUtc))
-                : 'No upcoming scheduled events'}
+              {nextEvent ? formatUtcDateTime(nextEvent.startUtc) : 'No upcoming scheduled events'}
             </p>
           </div>
           <div className="admin-dashboard__card">

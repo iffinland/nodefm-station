@@ -12,6 +12,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useStationIdentity } from '../../features/station';
+import { PaginationControls, paginateItems, usePagination } from '../../features/pagination';
 
 export default function PlaylistsAdminPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,6 +20,8 @@ export default function PlaylistsAdminPage() {
   const { playlists, loaded, loading, error, incomplete, diagnostics, createPlaylist, refresh } =
     usePlaylists();
   const { ownerAddress } = useStationIdentity();
+  const pagination = usePagination(playlists.length);
+  const pagePlaylists = paginateItems(playlists, pagination.pageIndex, pagination.pageSize);
 
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -172,7 +175,7 @@ export default function PlaylistsAdminPage() {
           </p>
         ) : (
           <div className="admin-playlists__list">
-            {playlists.map((pl) => (
+            {pagePlaylists.map((pl) => (
               <Link
                 key={pl.playlistId}
                 to={`/admin/playlists/${pl.playlistId}`}
@@ -194,6 +197,16 @@ export default function PlaylistsAdminPage() {
             ))}
           </div>
         )}
+
+        {playlists.length > 0 ? (
+          <PaginationControls
+            totalItems={playlists.length}
+            pageIndex={pagination.pageIndex}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPageIndex}
+            onPageSizeChange={pagination.setPageSize}
+          />
+        ) : null}
       </div>
     </PageShell>
   );

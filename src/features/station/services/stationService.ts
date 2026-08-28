@@ -6,13 +6,19 @@
  * isolated in the store below.
  * ============================================================ */
 
-import type { Station } from '../../../types/domain';
+import type { Station, StationMusicScope } from '../../../types/domain';
 import { generateId } from '../../../utils/id';
 import { isRecord } from '../../../utils/record';
 import { isNonEmptyTrimmedString } from '../../../utils/validation';
 
 export const STATION_QDN_SERVICE = 'JSON';
 export const STATION_QDN_IDENTIFIER = 'nodefm-station-config';
+
+export const STATION_MUSIC_SCOPES = ['INTERNATIONAL', 'REGIONAL', 'MIXED'] as const;
+
+export function isStationMusicScope(value: unknown): value is StationMusicScope {
+  return typeof value === 'string' && STATION_MUSIC_SCOPES.includes(value as StationMusicScope);
+}
 
 export type CreateStationInput = {
   name: string;
@@ -26,6 +32,7 @@ export type CreateStationInput = {
   stationEpochUtc: string;
   messagingEnabled: boolean;
   tipsEnabled: boolean;
+  musicScope?: StationMusicScope;
 };
 
 export type EditStationInput = Partial<
@@ -39,6 +46,7 @@ export type EditStationInput = Partial<
     | 'stationEpochUtc'
     | 'messagingEnabled'
     | 'tipsEnabled'
+    | 'musicScope'
   >
 >;
 
@@ -77,6 +85,7 @@ export function isStationConfigRecord(value: unknown): value is Station {
     isValidUtcTimestamp(candidate.stationEpochUtc) &&
     typeof candidate.messagingEnabled === 'boolean' &&
     typeof candidate.tipsEnabled === 'boolean' &&
+    (candidate.musicScope === undefined || isStationMusicScope(candidate.musicScope)) &&
     (candidate.ownerName === undefined || typeof candidate.ownerName === 'string') &&
     (candidate.description === undefined || typeof candidate.description === 'string')
   );
@@ -127,6 +136,7 @@ export function createStation(input: CreateStationInput): Station {
     stationEpochUtc: input.stationEpochUtc,
     messagingEnabled: input.messagingEnabled,
     tipsEnabled: input.tipsEnabled,
+    ...(input.musicScope ? { musicScope: input.musicScope } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -159,6 +169,10 @@ export function editStation(station: Station, input: EditStationInput): Station 
     throw new Error('Station epoch must be a valid UTC timestamp.');
   }
 
+  if (input.musicScope !== undefined && !isStationMusicScope(input.musicScope)) {
+    throw new Error('Station music scope is invalid.');
+  }
+
   return {
     ...station,
     ...input,
@@ -172,6 +186,7 @@ export function editStation(station: Station, input: EditStationInput): Station 
       input.defaultRotationPlaylistVersionId !== undefined
         ? input.defaultRotationPlaylistVersionId.trim()
         : station.defaultRotationPlaylistVersionId,
+    ...(input.musicScope !== undefined ? { musicScope: input.musicScope } : {}),
     updatedAt: new Date().toISOString(),
   };
 }

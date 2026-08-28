@@ -22,6 +22,7 @@ import {
   type PublicPlaylistDetail,
   type PublicPlaylistDetailResult,
 } from '../features/playlists/services/publicPlaylistService';
+import { PaginationControls, paginateItems, usePagination } from '../features/pagination';
 
 export default function PlaylistDetailPage() {
   const { playlistId } = useParams<{ playlistId: string }>();
@@ -44,6 +45,7 @@ export default function PlaylistDetailPage() {
   const [resolvingAudio, setResolvingAudio] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [detailTrack, setDetailTrack] = useState<Track | null>(null);
+  const pagination = usePagination(result?.status === 'ready' ? result.detail.tracks.length : 0);
 
   const load = useCallback(async (publisher: string, id: string) => {
     setLoading(true);
@@ -75,6 +77,10 @@ export default function PlaylistDetailPage() {
   }, [load, playlistId, publisherName, stationLoading]);
 
   const detail: PublicPlaylistDetail | null = result?.status === 'ready' ? result.detail : null;
+  const pageTracks = detail
+    ? paginateItems(detail.tracks, pagination.pageIndex, pagination.pageSize)
+    : [];
+  const trackOffset = pagination.pageIndex * pagination.pageSize;
 
   const startPlayback = useCallback(
     async (startIndex = 0) => {
@@ -262,42 +268,55 @@ export default function PlaylistDetailPage() {
         <section className="playlist-detail__tracks">
           <h3>Tracks</h3>
           <ol className="playlist-detail__track-list">
-            {tracks.map((entry, index) => (
-              <li
-                key={`${entry.track.trackId}-${index}`}
-                className={`playlist-detail__track${
-                  entry.track.trackId === currentTrack?.trackId
-                    ? ' playlist-detail__track--playing'
-                    : ''
-                }`}
-              >
-                <span className="playlist-detail__track-index">{index + 1}</span>
-                <span className="playlist-detail__track-title">
-                  {entry.track.title}
-                  {entry.track.artist ? ` — ${entry.track.artist}` : ''}
-                </span>
-                <span className="playlist-detail__track-duration">
-                  {formatDurationMs(entry.track.durationMs)}
-                </span>
-                <button
-                  className="button button--secondary playlist-detail__track-info"
-                  type="button"
-                  aria-label={`${entry.track.title} track details`}
-                  onClick={() => setDetailTrack(entry.track)}
+            {pageTracks.map((entry, index) => {
+              const trackIndex = trackOffset + index;
+
+              return (
+                <li
+                  key={`${entry.track.trackId}-${trackIndex}`}
+                  className={`playlist-detail__track${
+                    entry.track.trackId === currentTrack?.trackId
+                      ? ' playlist-detail__track--playing'
+                      : ''
+                  }`}
                 >
-                  ℹ
-                </button>
-                <button
-                  className="button button--secondary"
-                  type="button"
-                  onClick={() => startPlayback(index)}
-                  disabled={resolvingAudio}
-                >
-                  Play
-                </button>
-              </li>
-            ))}
+                  <span className="playlist-detail__track-index">{trackIndex + 1}</span>
+                  <span className="playlist-detail__track-title">
+                    {entry.track.title}
+                    {entry.track.artist ? ` — ${entry.track.artist}` : ''}
+                  </span>
+                  <span className="playlist-detail__track-duration">
+                    {formatDurationMs(entry.track.durationMs)}
+                  </span>
+                  <button
+                    className="button button--secondary playlist-detail__track-info"
+                    type="button"
+                    aria-label={`${entry.track.title} track details`}
+                    onClick={() => setDetailTrack(entry.track)}
+                  >
+                    ℹ
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => startPlayback(trackIndex)}
+                    disabled={resolvingAudio}
+                  >
+                    Play
+                  </button>
+                </li>
+              );
+            })}
           </ol>
+          {tracks.length > 0 ? (
+            <PaginationControls
+              totalItems={tracks.length}
+              pageIndex={pagination.pageIndex}
+              pageSize={pagination.pageSize}
+              onPageChange={pagination.setPageIndex}
+              onPageSizeChange={pagination.setPageSize}
+            />
+          ) : null}
         </section>
         {detailTrack && (
           <TrackDetailModal track={detailTrack} onClose={() => setDetailTrack(null)} />

@@ -19,6 +19,7 @@ import { generateId } from '../../../utils/id';
 import { isValidDurationMs } from '../../../utils/duration';
 import { isRecord } from '../../../utils/record';
 import { isNonEmptyTrimmedString } from '../../../utils/validation';
+import { stringToSeed, shuffleDeterministic } from '../../../utils/deterministicShuffle';
 import { parseUtcTimestampMs } from '../../radio/timeline/timelineMath';
 import type { RankedLikedTrack } from '../../likes/services/likeService';
 
@@ -157,47 +158,6 @@ export function deserializeDynamicProgramOccurrenceFromQdn(
   value: unknown,
 ): DynamicProgramOccurrence | null {
   return isValidDynamicProgramOccurrence(value) ? (value as DynamicProgramOccurrence) : null;
-}
-
-function fnv1aHash(value: string): string {
-  let hash = 0x811c9dc5;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-
-  return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function hashToSeed(value: string): number {
-  return Number.parseInt(fnv1aHash(value), 16) >>> 0;
-}
-
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0;
-
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let result = state;
-    result = Math.imul(result ^ (result >>> 15), result | 1);
-    result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
-    return ((result ^ (result >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
-function shuffleDeterministic<T>(values: readonly T[], seed: number): T[] {
-  const result = [...values];
-  const random = mulberry32(seed);
-
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    const current = result[index];
-    result[index] = result[swapIndex];
-    result[swapIndex] = current;
-  }
-
-  return result;
 }
 
 export function buildRequestShowSeed(
@@ -355,7 +315,7 @@ export function generateRequestShowOccurrence(
   const fallbackCandidates = candidates.filter((track) => !selectedTrackIds.has(track.trackId));
   const fallbackOrder = shuffleDeterministic(
     fallbackCandidates,
-    hashToSeed(
+    stringToSeed(
       buildRequestShowSeed(
         definition.programDefinitionId,
         scheduleEvent.eventId,

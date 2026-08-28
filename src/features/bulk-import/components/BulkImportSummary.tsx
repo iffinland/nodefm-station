@@ -8,9 +8,14 @@ import type { BulkImportBatchSummary } from '../selectors';
 type BulkImportSummaryProps = {
   summary: BulkImportBatchSummary;
   capabilityMessage: string;
+  capabilityStatus?: 'available' | 'unavailable';
 };
 
-export function BulkImportSummary({ summary, capabilityMessage }: BulkImportSummaryProps) {
+export function BulkImportSummary({
+  summary,
+  capabilityMessage,
+  capabilityStatus = 'unavailable',
+}: BulkImportSummaryProps) {
   const { limits } = summary;
 
   return (
@@ -52,7 +57,9 @@ export function BulkImportSummary({ summary, capabilityMessage }: BulkImportSumm
       ) : null}
 
       <div className="bulk-import__capability">
-        <span className="bulk-import__capability-badge">A2 pending</span>
+        <span className="bulk-import__capability-badge">
+          {capabilityStatus === 'available' ? 'A2 ready' : 'A2 pending'}
+        </span>
         <span>{capabilityMessage}</span>
       </div>
     </section>

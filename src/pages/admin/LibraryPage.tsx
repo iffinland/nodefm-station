@@ -21,6 +21,7 @@ import { AddQdnFlow } from '../../features/library/components/AddQdnFlow';
 import { TrackCover } from '../../features/library/components/TrackCover';
 import { ListenerUploadsAdminPanel } from '../../features/listener-submissions/components/ListenerUploadsAdminPanel';
 import { BulkImportWorkspace } from '../../features/bulk-import';
+import { PaginationControls, paginateItems, usePagination } from '../../features/pagination';
 import {
   TrackFilterBar,
   TrackMetadataLine,
@@ -36,6 +37,12 @@ export default function LibraryPage() {
   const { tracks, loaded, loading, error, incomplete, diagnostics, removeTrack, refresh } =
     useLibrary();
   const trackFiltering = useTrackFiltering(tracks);
+  const pagination = usePagination(trackFiltering.visibleTracks.length);
+  const pageTracks = paginateItems(
+    trackFiltering.visibleTracks,
+    pagination.pageIndex,
+    pagination.pageSize,
+  );
   const [activeTab, setActiveTab] = useState<LibraryTab>('library');
   const [showUpload, setShowUpload] = useState(false);
   const [showAddQdn, setShowAddQdn] = useState(false);
@@ -100,6 +107,27 @@ export default function LibraryPage() {
     },
     [removeTrack],
   );
+
+  const handleFilterChange = useCallback(
+    (key: Parameters<typeof trackFiltering.setFilter>[0], value: string) => {
+      trackFiltering.setFilter(key, value);
+      pagination.reset();
+    },
+    [pagination, trackFiltering],
+  );
+
+  const handleSortChange = useCallback(
+    (sort: typeof trackFiltering.sort) => {
+      trackFiltering.setSort(sort);
+      pagination.reset();
+    },
+    [pagination, trackFiltering],
+  );
+
+  const handleClearFilters = useCallback(() => {
+    trackFiltering.clearFilters();
+    pagination.reset();
+  }, [pagination, trackFiltering]);
 
   if (loading && !loaded) {
     return (
@@ -186,9 +214,9 @@ export default function LibraryPage() {
                 options={trackFiltering.options}
                 resultCount={trackFiltering.visibleTracks.length}
                 totalCount={tracks.length}
-                onFilterChange={trackFiltering.setFilter}
-                onSortChange={trackFiltering.setSort}
-                onClearFilters={trackFiltering.clearFilters}
+                onFilterChange={handleFilterChange}
+                onSortChange={handleSortChange}
+                onClearFilters={handleClearFilters}
               />
             ) : null}
 
@@ -206,7 +234,7 @@ export default function LibraryPage() {
               <p className="admin-library__empty">No tracks match the current search or filters.</p>
             ) : (
               <div className="admin-library__grid">
-                {trackFiltering.visibleTracks.map((track) => (
+                {pageTracks.map((track) => (
                   <TrackCard
                     key={track.trackId}
                     track={track}
@@ -216,6 +244,16 @@ export default function LibraryPage() {
                 ))}
               </div>
             )}
+
+            {trackFiltering.visibleTracks.length > 0 ? (
+              <PaginationControls
+                totalItems={trackFiltering.visibleTracks.length}
+                pageIndex={pagination.pageIndex}
+                pageSize={pagination.pageSize}
+                onPageChange={pagination.setPageIndex}
+                onPageSizeChange={pagination.setPageSize}
+              />
+            ) : null}
           </>
         )}
       </div>
@@ -226,7 +264,13 @@ export default function LibraryPage() {
 
       {showBulkImport && (
         <Modal title="Bulk Import" onClose={() => setShowBulkImport(false)} wide>
-          <BulkImportWorkspace role="admin" scope={bulkScope} showHeader={false} />
+          <BulkImportWorkspace
+            role="admin"
+            scope={bulkScope}
+            showHeader={false}
+            actorName={publisherName}
+            actorAddress={ownerAddress}
+          />
         </Modal>
       )}
 

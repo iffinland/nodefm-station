@@ -6,7 +6,7 @@
  * ============================================================ */
 
 import { PageShell } from '../components/PageShell';
-import { useStation } from '../features/station';
+import { StationMusicScopeBadge, useStation } from '../features/station';
 import { StationNotices } from '../features/notices/components';
 import { useNowUtcMs } from '../features/radio/hooks/useNowUtcMs';
 
@@ -32,6 +32,7 @@ export default function AboutPage() {
                 </p>
                 {station?.description && <p>{station.description}</p>}
                 {station?.ownerName && <p>Station owner: {station.ownerName}</p>}
+                <StationMusicScopeBadge musicScope={station?.musicScope} />
                 <p>
                   Station messaging:{' '}
                   <strong>{station?.messagingEnabled ? 'Enabled' : 'Disabled'}</strong> ·
