@@ -1,5 +1,9 @@
 # Development Roadmap
 
+This roadmap records the original specification phases and the durable
+hardening workstream. It is not a live task ledger. For current repository
+state, inspect Git/source and the canonical project context and reports.
+
 The goal is to use the current low-cost DeepSeek development window efficiently without sacrificing architecture.
 
 ## Phase 0 — Specification
@@ -279,7 +283,8 @@ Phase 7 blocker.
 
 ## Phase 8 — Hardening
 
-Status: **not started**
+Status: **active since 2026-08-20; multiple beta/hardening scopes completed,
+additional owner validation and follow-up work remain task-specific**
 
 Perform:
 
@@ -293,6 +298,18 @@ Perform:
 - bundle/lazy-loading review;
 - Qortium-native integration audit;
 - independent DeepSeek/Codex review if economically justified.
+
+Completed Phase 8 work includes beta baseline/release-candidate hardening,
+independent audit remediation, bulk import and native media publication
+boundaries, listener-owned playlists/submissions/moderation, missing-track
+resilience, deterministic playback improvements, transaction UX, and cold-start
+profiling/optimization. Exact evidence and any remaining owner-live-validation
+gate belong in the dated reports under:
+
+`/home/iffi/VsCodec-Projects/Qortium/docs/nodefm-station/`
+
+Do not infer that every hardening category above is complete merely because
+individual Phase 8 tasks passed.
 
 ## Explicitly separate future project
 

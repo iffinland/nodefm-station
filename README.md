@@ -1,56 +1,77 @@
 # NodeFM Station
 
-Status: **Phase 7 — COMPLETE**
+NodeFM is a Qortium-native scheduled 24/7 Auto-DJ radio dApp. A listener joins
+the deterministic broadcast position derived from current time, schedule,
+immutable playlist versions, verified track durations, and default rotation;
+the station does not require a continuously running streaming backend.
 
-Phase 2 owner embedded Qortium Home validation: **PASSED**
-Phase 3 owner embedded Qortium Home validation: **PASSED**
-Phase 4 owner embedded Qortium Home validation: **PASSED**
-Phase 5 owner embedded Qortium Home validation: **PASSED**
-Phase 6 owner embedded Qortium Home validation: **PASSED**
-Phase 7 owner embedded Qortium Home validation: **PASSED**
-Application name: **NodeFM**
-Priority: **Scheduled Auto-DJ radio station**
-Future Q-Music/community platform: **separate project, explicitly out of scope**
-Next phase: **Phase 8 — Hardening**
+## Current status
 
-This package is the authoritative starting point for a new Qortium-native radio dApp built from scratch.
+The original specification phases 0–7 were implemented and owner-validated,
+after which the project entered active beta/hardening and continued through
+listener playlists, listener submissions/moderation, resilience, transaction
+UX, and cold-start optimization work.
 
-Implementation status is tracked in `docs/ROADMAP.md`. The Phase 0 documents
-below remain the authoritative product, architecture, data-model, timeline,
-player, and admin contracts.
+Do not use the old phrase “Phase 8 not started” as current status. The roadmap
+now records Phase 8 as active and points to current source, Git state, and
+canonical reports for task-level evidence. The latest local working tree may
+contain owner changes and must be inspected before work.
 
-## Core product idea
+## Product scope
 
-The app is a 24/7 scheduled auto-DJ radio station. The station does not depend on a centralized streaming process that must keep playing continuously. Instead, the current broadcast position is derived deterministically from:
+- deterministic live radio timeline and default rotation;
+- station schedules and immutable playlist versions;
+- global audio engine with live and playlist modes;
+- music library and QDN media flows;
+- listener likes, uploads/submissions, and owned playlists;
+- Request Show, station messages, tips/donations, and admin workflows.
 
-- the current time;
-- the active schedule event;
-- the selected immutable playlist version;
-- track durations;
-- the station's default rotation when no scheduled event exists.
+The future Q-Music-style creator/community platform is a separate product. Do
+not port or reuse old Q-Music/Qortal architecture as NodeFM's foundation.
 
-A listener opening the app at any moment joins the broadcast at the position that should be live at that exact time.
+## Durable specifications
 
-## Documentation order
+1. [`docs/PROJECT-VISION.md`](docs/PROJECT-VISION.md)
+2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+3. [`docs/QORTIUM-DATA-MODEL.md`](docs/QORTIUM-DATA-MODEL.md)
+4. [`docs/RADIO-TIMELINE-SPEC.md`](docs/RADIO-TIMELINE-SPEC.md)
+5. [`docs/PLAYER-SPEC.md`](docs/PLAYER-SPEC.md)
+6. [`docs/ADMIN-SPEC.md`](docs/ADMIN-SPEC.md)
+7. [`docs/ROADMAP.md`](docs/ROADMAP.md)
+8. [`docs/RELEASE.md`](docs/RELEASE.md)
 
-1. `docs/PROJECT-VISION.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/QORTIUM-DATA-MODEL.md`
-4. `docs/RADIO-TIMELINE-SPEC.md`
-5. `docs/PLAYER-SPEC.md`
-6. `docs/ADMIN-SPEC.md`
-7. `docs/ROADMAP.md`
-8. `agents/AGENTS.md`
-9. `agents/DEEPSEEK-BOOTSTRAP-PROMPT.md`
+Current source is authoritative for implemented behavior. The roadmap is a
+product-plan/history document, not a substitute for a fresh source and Git
+baseline.
 
-## Non-negotiable project rules
+## Development
 
-- Build the app as a new Qortium-native project.
-- Do not port or reuse Q-Music code.
-- Do not copy Q-Music architecture.
-- Old Q-Music may later be inspected only for visual or functional inspiration.
-- Keep Qortium/QDN integration isolated behind dedicated services/adapters.
-- Avoid ordinary web2 assumptions such as a permanent centralized backend.
-- The first implementation target is the radio station, not the future community music platform.
-- The audio engine must be global and persistent across app navigation.
-- Scheduled broadcast state must be deterministic and reconstructable from published data.
+```bash
+npm ci
+npm run dev
+npm run test
+npm run build
+npm run lint
+npm run format:check
+```
+
+Local preview, mocks, tests, and build output do not prove embedded Home,
+deployed QDN, playback, persistence, or transaction behavior.
+
+## Agent routing and reports
+
+- [`AGENTS.md`](AGENTS.md) — project entry point for AI-assisted work.
+- Canonical project context:
+  `/home/iffi/VsCodec-Projects/Qortium/qortium-dev-workspace/projects/nodefm-station.md`
+- AI work reports belong under
+  `/home/iffi/VsCodec-Projects/Qortium/docs/nodefm-station/`.
+
+The application `docs/` directory is reserved for durable specifications and
+operator/release documentation.
+
+## Release boundary
+
+Build, commit, push, tag, release, deployment, signing, payments, moderation,
+and QDN publication require explicit owner authorization. Follow
+[`docs/RELEASE.md`](docs/RELEASE.md) and record exact source/artifact/deployment
+provenance.
