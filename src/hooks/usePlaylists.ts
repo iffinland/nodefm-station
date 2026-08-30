@@ -51,6 +51,7 @@ export type UsePlaylistsResult = {
   duplicatePlaylist: (id: string, newTitle?: string) => Promise<Playlist>;
   publishVersion: (
     input: PlaylistVersionInput,
+    onProgress?: (chunk: 'version' | 'pointer') => void,
   ) => Promise<
     | { ok: true; version: PlaylistVersion }
     | { ok: false; error: string; invalidTrackIds: string[] }
@@ -162,9 +163,12 @@ export function usePlaylists(): UsePlaylistsResult {
       throwIfNoName();
       return duplicatePlaylistAction(id, newTitle, publisherName!);
     },
-    publishVersion: async (input: PlaylistVersionInput) => {
+    publishVersion: async (
+      input: PlaylistVersionInput,
+      onProgress?: (chunk: 'version' | 'pointer') => void,
+    ) => {
       throwIfNoName();
-      return publishPlaylistVersion(input, publisherName!);
+      return publishPlaylistVersion(input, publisherName!, onProgress);
     },
     deleteVersion: async (versionId: string) => {
       throwIfNoName();

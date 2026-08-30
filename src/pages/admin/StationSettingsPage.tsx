@@ -9,6 +9,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
+import { QdnTransactionFlow } from '../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../components/qdnTransactionFlow';
 import { useStation } from '../../features/station';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { NoticeAdminPanel } from '../../features/notices/components';
@@ -45,6 +51,7 @@ export default function StationSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
   const [initialized, setInitialized] = useState(false);
 
   const versions = useMemo(
@@ -101,6 +108,20 @@ export default function StationSettingsPage() {
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(false);
+    setTransaction(
+      createQdnTransactionState(
+        [
+          {
+            id: 'station',
+            label: station ? 'Save station configuration' : 'Publish station configuration',
+          },
+        ],
+        { retryable: true },
+      ),
+    );
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'station') : current,
+    );
 
     try {
       await saveStation({
@@ -115,8 +136,32 @@ export default function StationSettingsPage() {
         musicScope: musicScope || undefined,
       });
       setSaveSuccess(true);
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: 'Station configuration saved.',
+              retryable: false,
+            }
+          : current,
+      );
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save station configuration.');
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error: err instanceof Error ? err.message : 'Failed to save station configuration.',
+              retryable: true,
+            }
+          : current,
+      );
     } finally {
       setSaving(false);
     }
@@ -131,6 +176,7 @@ export default function StationSettingsPage() {
     tipsEnabled,
     musicScope,
     saveStation,
+    station,
   ]);
 
   if (loading || playlistsLoading) {
@@ -289,6 +335,13 @@ export default function StationSettingsPage() {
         </div>
         <NoticeAdminPanel />
       </div>
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Station Configuration"
+          state={transaction}
+          onClose={() => setTransaction(null)}
+        />
+      ) : null}
     </PageShell>
   );
 }

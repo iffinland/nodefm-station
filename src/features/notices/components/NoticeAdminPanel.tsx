@@ -6,6 +6,12 @@
  * ============================================================ */
 
 import { useState } from 'react';
+import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../../components/qdnTransactionFlow';
 import type { StationNotice } from '../../../types/domain';
 import { useStation } from '../../station';
 import { useNotices } from '../useNotices';
@@ -18,22 +24,52 @@ export function NoticeAdminPanel() {
   const [editingNotice, setEditingNotice] = useState<StationNotice | null | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
 
   if (!isOwner) {
     return null;
   }
 
   const handleDelete = async (notice: StationNotice) => {
-    if (!window.confirm(`Delete notice "${notice.title ?? 'Untitled'}"?`)) {
-      return;
-    }
-
     setActionError(null);
+    setTransaction(
+      createQdnTransactionState(
+        [{ id: 'delete', label: `Delete notice "${notice.title ?? 'Untitled'}"` }],
+        { retryable: true },
+      ),
+    );
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'delete') : current,
+    );
 
     try {
       await deleteNotice(notice.noticeId);
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: 'Notice deleted.',
+              retryable: false,
+            }
+          : current,
+      );
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to delete notice.');
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error: err instanceof Error ? err.message : 'Failed to delete notice.',
+              retryable: true,
+            }
+          : current,
+      );
     }
   };
 
@@ -98,6 +134,14 @@ export function NoticeAdminPanel() {
           onSave={saveNotice}
         />
       )}
+
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Delete Notice"
+          state={transaction}
+          onClose={() => setTransaction(null)}
+        />
+      ) : null}
     </section>
   );
 }

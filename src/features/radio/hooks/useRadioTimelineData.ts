@@ -6,8 +6,9 @@
  * separate from this data-loading hook.
  * ============================================================ */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStation } from '../../station';
+import { recordStartupEvent } from '../../../services/perf/startupDiagnostics';
 import {
   getRadioTimelineData,
   getRadioTimelineDataError,
@@ -34,6 +35,8 @@ export function useRadioTimelineData(): UseRadioTimelineDataResult {
   const [loaded, setLoaded] = useState(getRadioTimelineDataLoaded());
   const [loading, setLoading] = useState(getRadioTimelineDataLoading());
   const [error, setError] = useState<string | null>(getRadioTimelineDataError());
+  const timelineStartRecordedRef = useRef(false);
+  const timelineReadyRecordedRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToRadioTimelineData(() => {
@@ -71,6 +74,21 @@ export function useRadioTimelineData(): UseRadioTimelineDataResult {
     setError(null);
     loadRadioTimelineData(station, publisherName);
   }, [station, stationLoaded, publisherName]);
+
+  useEffect(() => {
+    if (loading && !timelineStartRecordedRef.current) {
+      timelineStartRecordedRef.current = true;
+      recordStartupEvent('TIMELINE_DATA_START');
+    }
+
+    if ((loaded || error) && !timelineReadyRecordedRef.current) {
+      timelineReadyRecordedRef.current = true;
+      recordStartupEvent('TIMELINE_DATA_READY', {
+        completion: loaded ? 'success' : 'error',
+        detail: error ?? undefined,
+      });
+    }
+  }, [error, loaded, loading]);
 
   const refresh = useCallback(async () => {
     if (!station || !publisherName) {

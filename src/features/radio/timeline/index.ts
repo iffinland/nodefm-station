@@ -1,5 +1,6 @@
 export {
   resolveLiveState,
+  resolvePlaybackTrackOrder,
   getUpcomingTracks,
   getCurrentScheduleEvent,
 } from './RadioTimelineEngine';
@@ -20,4 +21,6 @@ export type {
   TimelineFailure,
   UpcomingResult,
   PlaybackSourceTimeline,
+  PlaybackTrackOrder,
+  PlaybackTrackOrderResult,
 } from './timelineTypes';

@@ -17,21 +17,29 @@ import {
   formatStationTimeContext,
   formatStationTimeInput,
 } from '../utils/stationTime';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Track } from '../types/domain';
 import { MessageOwnerModal } from '../features/messaging';
 import { TipOwnerModal } from '../features/tips';
 import { ShareModal } from '../features/sharing';
 import { StationNotices } from '../features/notices/components';
 import { TrackDetailModal } from '../features/tracks';
+import { recordStartupEvent } from '../services/perf/startupDiagnostics';
+import { LiveRadioLoadingIndicator } from '../features/radio/components/LiveRadioLoadingIndicator';
 
 export default function RadioPage() {
-  const { playerState, timeline, playbackError, retry } = useLiveRadioPlayerContext();
+  const { playerState, timeline, playbackError, playbackWarning, retry } =
+    useLiveRadioPlayerContext();
   const { station, loading: stationLoading, refresh: refreshStation } = useStation();
   const { auth } = useAuth();
   const stationTimeZone = station?.timezone ?? '';
   const liveState = timeline.liveState;
   const currentTrack = timeline.currentTrack;
+  const displayTitle = currentTrack?.title ?? playerState.currentTrack?.title ?? '—';
+  const displayArtist =
+    currentTrack?.artist ??
+    playerState.currentTrack?.artist ??
+    (stationLoading ? 'Loading station…' : 'No track playing');
   const currentTrackId = currentTrack?.trackId ?? '';
   const {
     isLiked,
@@ -47,6 +55,29 @@ export default function RadioPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
+
+  useEffect(() => {
+    if (timeline.upcoming.length > 0) {
+      recordStartupEvent('COMING_UP_USABLE', {
+        completion: 'success',
+        resultCount: timeline.upcoming.length,
+      });
+    }
+  }, [timeline.upcoming.length]);
+
+  useEffect(() => {
+    if (timeline.dataLoaded || timeline.dataError) {
+      recordStartupEvent('SCHEDULE_USABLE', {
+        completion: timeline.dataError
+          ? 'error'
+          : timeline.scheduleEvents.length > 0
+            ? 'success'
+            : 'empty',
+        resultCount: timeline.scheduleEvents.length,
+        detail: timeline.dataError ?? undefined,
+      });
+    }
+  }, [timeline.dataError, timeline.dataLoaded, timeline.scheduleEvents.length]);
 
   const handleLike = async () => {
     if (!currentTrackId) {
@@ -96,10 +127,8 @@ export default function RadioPage() {
                   {liveState?.mode === 'scheduled' ? 'SCHEDULED' : 'AutoDJ-LIVE'}
                 </span>
               </div>
-              <h2 className="now-playing__title">{currentTrack?.title ?? '—'}</h2>
-              <p className="now-playing__artist">
-                {currentTrack?.artist ?? (stationLoading ? 'Loading station…' : 'No track playing')}
-              </p>
+              <h2 className="now-playing__title">{displayTitle}</h2>
+              <p className="now-playing__artist">{displayArtist}</p>
               {liveState?.programTitle && (
                 <p className="now-playing__program">{liveState.programTitle}</p>
               )}
@@ -195,6 +224,9 @@ export default function RadioPage() {
                   </button>
                 </p>
               )}
+              {!playbackError && playbackWarning && (
+                <p className="now-playing__error">{playbackWarning}</p>
+              )}
               {timeline.stationError && (
                 <p className="now-playing__error">
                   {timeline.stationError}{' '}
@@ -228,6 +260,7 @@ export default function RadioPage() {
           <div className="radio-page__notices">
             <StationNotices nowUtcMs={timeline.nowUtcMs} />
           </div>
+          <LiveRadioLoadingIndicator />
         </section>
 
         {/* Upcoming Section */}

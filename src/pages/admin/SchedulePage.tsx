@@ -11,6 +11,12 @@ import { useSearchParams } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
+import { QdnTransactionFlow } from '../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../components/qdnTransactionFlow';
 import { useStation } from '../../features/station';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useScheduler } from '../../features/scheduling/hooks/useScheduler';
@@ -81,6 +87,7 @@ export default function SchedulePage() {
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [selectedDate, setSelectedDate] = useState('');
   const [modal, setModal] = useState<ScheduleModalState>(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
 
   useEffect(() => {
     if (timeZoneIsValid && timeZone && !selectedDate) {
@@ -148,14 +155,48 @@ export default function SchedulePage() {
   };
 
   const handleDeleteRecurrence = async (recurrenceId: string) => {
-    if (!window.confirm('Delete this recurring program and its future generated events?')) {
-      return;
-    }
+    setTransaction(
+      createQdnTransactionState(
+        [
+          { id: 'events', label: 'Delete future generated schedule events' },
+          { id: 'recurrence', label: 'Delete recurring program intent' },
+        ],
+        { retryable: true },
+      ),
+    );
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'events') : current,
+    );
 
     try {
-      await deleteRecurrence(recurrenceId);
+      const result = await deleteRecurrence(recurrenceId);
+      if (result.status === 'deleted') {
+        setTransaction((current) =>
+          current
+            ? {
+                ...current,
+                chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+                phase: 'success' as const,
+                successMessage: 'Recurring program deleted.',
+                retryable: false,
+              }
+            : current,
+        );
+      }
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Failed to delete recurrence.');
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'partial' as const,
+              error: error instanceof Error ? error.message : 'Failed to delete recurrence.',
+              retryable: true,
+            }
+          : current,
+      );
     }
   };
 
@@ -442,6 +483,14 @@ export default function SchedulePage() {
           onClose={() => setModal(null)}
         />
       )}
+
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Delete Recurring Program"
+          state={transaction}
+          onClose={() => setTransaction(null)}
+        />
+      ) : null}
     </PageShell>
   );
 }

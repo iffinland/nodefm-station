@@ -90,6 +90,21 @@ export type PlaybackSourceTimeline = {
   programTitle?: string;
 };
 
+export type PlaybackTrackOrder = {
+  source: PlaybackSourceTimeline;
+  tracks: readonly PlaylistVersionTrack[];
+  currentIndex: number;
+  currentLoopIndex: number;
+  totalDurationMs: number;
+};
+
+export type PlaybackTrackOrderResult =
+  | {
+      status: 'ready';
+      order: PlaybackTrackOrder;
+    }
+  | TimelineFailure;
+
 export type UpcomingResult =
   | {
       status: 'ready';

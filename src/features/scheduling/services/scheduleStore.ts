@@ -43,6 +43,7 @@ import {
 } from './scheduleService';
 import { compileScheduleRecurrence } from './recurrenceCompiler';
 import { parseUtcTimestampMs } from './scheduleService';
+import { mapWithConcurrency } from '../../../utils/mapConcurrent';
 
 type ScheduleListener = () => void;
 
@@ -512,22 +513,25 @@ export async function loadScheduleEventsForPublisher(
   });
 
   const seen = new Set<string>();
-  const events: ScheduleEvent[] = [];
-
+  const identifiers = [];
   for (const result of results) {
     if (
       !result.identifier ||
       !result.identifier.startsWith(SCHEDULE_EVENT_IDENTIFIER_PREFIX) ||
-      result.identifier.startsWith(SCHEDULE_RECURRENCE_IDENTIFIER_PREFIX)
+      result.identifier.startsWith(SCHEDULE_RECURRENCE_IDENTIFIER_PREFIX) ||
+      seen.has(result.identifier)
     ) {
       continue;
     }
+    seen.add(result.identifier);
+    identifiers.push(result);
+  }
 
-    if (seen.has(result.identifier)) {
-      continue;
+  return mapWithConcurrency(identifiers, 8, async (result) => {
+    if (!result.identifier) {
+      throw new Error('Schedule search result is missing an identifier.');
     }
 
-    seen.add(result.identifier);
     const payload = await fetchQdnResourceData({
       service: SCHEDULE_QDN_SERVICE,
       name: publisherName,
@@ -539,10 +543,8 @@ export async function loadScheduleEventsForPublisher(
       throw new Error(`Malformed schedule event resource: ${result.identifier}`);
     }
 
-    events.push(event);
-  }
-
-  return events;
+    return event;
+  });
 }
 
 export function resetScheduleStore(): void {

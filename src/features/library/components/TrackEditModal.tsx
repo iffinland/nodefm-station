@@ -6,6 +6,12 @@
 
 import { useState } from 'react';
 import { Modal } from '../../../components/Modal';
+import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../../components/qdnTransactionFlow';
 import type { Track } from '../../../types/domain';
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
@@ -43,6 +49,7 @@ export function TrackEditModal({ track, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [coverPublishing, setCoverPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
 
   const handleCoverSelected = async (file: File) => {
     try {
@@ -68,6 +75,16 @@ export function TrackEditModal({ track, onClose }: Props) {
   const handleSave = async () => {
     setSaving(true);
     setError(null);
+    const chunks = coverFile
+      ? [
+          { id: 'cover', label: 'Publish track cover' },
+          { id: 'track', label: 'Update track metadata' },
+        ]
+      : [{ id: 'track', label: 'Update track metadata' }];
+    setTransaction(createQdnTransactionState(chunks, { retryable: true }));
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, chunks[0].id) : current,
+    );
 
     try {
       if (releaseDate.trim() && !isValidReleaseDateValue(releaseDate)) {
@@ -105,6 +122,9 @@ export function TrackEditModal({ track, onClose }: Props) {
               tags: tags.trim() ? getCanonicalTaxonomyValues(tags, tagSuggestions) : undefined,
             },
           });
+          setTransaction((current) =>
+            current ? markQdnTransactionChunkActive(current, 'track') : current,
+          );
         } catch (err) {
           throw new Error(
             `Cover publication failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -128,112 +148,159 @@ export function TrackEditModal({ track, onClose }: Props) {
       }
       remember('genres', getCanonicalTaxonomyValues(genres, genreSuggestions));
       remember('tags', getCanonicalTaxonomyValues(tags, tagSuggestions));
-      onClose();
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: 'Track saved.',
+              retryable: false,
+            }
+          : current,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save track.');
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error: err instanceof Error ? err.message : 'Failed to save track.',
+              retryable: true,
+            }
+          : current,
+      );
     } finally {
       setSaving(false);
+      setCoverPublishing(false);
     }
   };
 
   return (
     <Modal title="Edit Track" onClose={onClose}>
-      <label className="form-field">
-        Title
-        <TitleInput value={title} onChange={setTitle} artistValue={artist} />
-      </label>
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Edit Track"
+          state={transaction}
+          standalone={false}
+          onClose={() => {
+            setTransaction(null);
+            if (transaction.phase === 'success') onClose();
+          }}
+          onRetry={() => void handleSave()}
+        />
+      ) : (
+        <>
+          <label className="form-field">
+            Title
+            <TitleInput value={title} onChange={setTitle} artistValue={artist} />
+          </label>
 
-      <label className="form-field">
-        Artist
-        <ArtistInput value={artist} onChange={setArtist} />
-      </label>
+          <label className="form-field">
+            Artist
+            <ArtistInput value={artist} onChange={setArtist} />
+          </label>
 
-      <label className="form-field">
-        Album
-        <AlbumInput value={album} onChange={setAlbum} artistValue={artist} />
-      </label>
+          <label className="form-field">
+            Album
+            <AlbumInput value={album} onChange={setAlbum} artistValue={artist} />
+          </label>
 
-      <label className="form-field">
-        Release date
-        <ReleaseDateInput value={releaseDate} onChange={setReleaseDate} />
-      </label>
+          <label className="form-field">
+            Release date
+            <ReleaseDateInput value={releaseDate} onChange={setReleaseDate} />
+          </label>
 
-      <label className="form-field">
-        Description
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-      </label>
-
-      <div className="form-field">
-        <label>Cover Image</label>
-        <div className="upload-flow__cover-preview-wrap">
-          {coverPreview ? (
-            <img
-              src={coverPreview}
-              alt="New cover preview"
-              className="upload-flow__cover-preview"
+          <label className="form-field">
+            Description
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
             />
-          ) : removeCover ? (
-            <span className="upload-flow__cover-removed">Cover will be removed</span>
-          ) : (
-            <TrackCover
-              cover={track.cover}
-              placeholder={<div className="track-card__cover-placeholder">🎵</div>}
-              alt={`${track.title} cover`}
+          </label>
+
+          <div className="form-field">
+            <label>Cover Image</label>
+            <div className="upload-flow__cover-preview-wrap">
+              {coverPreview ? (
+                <img
+                  src={coverPreview}
+                  alt="New cover preview"
+                  className="upload-flow__cover-preview"
+                />
+              ) : removeCover ? (
+                <span className="upload-flow__cover-removed">Cover will be removed</span>
+              ) : (
+                <TrackCover
+                  cover={track.cover}
+                  placeholder={<div className="track-card__cover-placeholder">🎵</div>}
+                  alt={`${track.title} cover`}
+                />
+              )}
+            </div>
+            <div className="upload-flow__cover-actions">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleCoverSelected(file);
+                }}
+              />
+              {track.cover && (
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={handleRemoveCover}
+                >
+                  Remove Cover
+                </button>
+              )}
+            </div>
+          </div>
+
+          <label className="form-field">
+            Genres
+            <TaxonomyInput
+              kind="genres"
+              value={genres}
+              onChange={setGenres}
+              placeholder="Rock, Electronic"
             />
-          )}
-        </div>
-        <div className="upload-flow__cover-actions">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleCoverSelected(file);
-            }}
-          />
-          {track.cover && (
-            <button className="button button--secondary" type="button" onClick={handleRemoveCover}>
-              Remove Cover
+          </label>
+
+          <label className="form-field">
+            Tags
+            <TaxonomyInput
+              kind="tags"
+              value={tags}
+              onChange={setTags}
+              placeholder="chill, upbeat, instrumental"
+            />
+          </label>
+
+          {error && <p className="form-error">{error}</p>}
+
+          <div className="form-actions">
+            <button className="button button--secondary" type="button" onClick={onClose}>
+              Cancel
             </button>
-          )}
-        </div>
-      </div>
-
-      <label className="form-field">
-        Genres
-        <TaxonomyInput
-          kind="genres"
-          value={genres}
-          onChange={setGenres}
-          placeholder="Rock, Electronic"
-        />
-      </label>
-
-      <label className="form-field">
-        Tags
-        <TaxonomyInput
-          kind="tags"
-          value={tags}
-          onChange={setTags}
-          placeholder="chill, upbeat, instrumental"
-        />
-      </label>
-
-      {error && <p className="form-error">{error}</p>}
-
-      <div className="form-actions">
-        <button className="button button--secondary" type="button" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          className="button button--primary"
-          type="button"
-          onClick={handleSave}
-          disabled={saving || coverPublishing || !title.trim()}
-        >
-          {coverPublishing ? 'Publishing cover…' : saving ? 'Saving…' : 'Save'}
-        </button>
-      </div>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handleSave}
+              disabled={saving || coverPublishing || !title.trim()}
+            >
+              {coverPublishing ? 'Publishing cover…' : saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }

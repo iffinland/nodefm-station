@@ -7,9 +7,10 @@
  * ============================================================ */
 
 import { useMemo } from 'react';
-import type { ScheduleEvent, Track } from '../../../types/domain';
+import type { PlaylistVersionTrack, ScheduleEvent, Track } from '../../../types/domain';
 import {
   getUpcomingTracks,
+  resolvePlaybackTrackOrder,
   resolveLiveState,
   type LiveState,
   type TimelineInput,
@@ -19,6 +20,7 @@ import {
 import { useStation } from '../../station';
 import { useNowUtcMs } from './useNowUtcMs';
 import { useRadioTimelineData } from './useRadioTimelineData';
+import type { LivePlaybackCandidate } from '../player/livePlaybackFallback';
 
 export type UpcomingTrackWithMetadata = UpcomingTrack & {
   title?: string;
@@ -37,6 +39,8 @@ export type UseRadioTimelineResult = {
   liveResult: TimelineResult;
   currentTrack: Track | null;
   liveState: LiveState | null;
+  playbackCandidates: LivePlaybackCandidate[];
+  missingTrackIds: string[];
   upcoming: UpcomingTrackWithMetadata[];
   upcomingResult: ReturnType<typeof getUpcomingTracks>;
   scheduleEvents: ScheduleEvent[];
@@ -71,6 +75,11 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
     [nowUtcMs, timelineInput],
   );
 
+  const playbackOrderResult = useMemo(
+    () => resolvePlaybackTrackOrder(nowUtcMs, timelineInput),
+    [nowUtcMs, timelineInput],
+  );
+
   const upcomingResult = useMemo(
     () => getUpcomingTracks(nowUtcMs, UPCOMING_COUNT, timelineInput),
     [nowUtcMs, timelineInput],
@@ -82,6 +91,32 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
       ? dataState.data.tracks[liveState.trackId]
       : null;
 
+  const playbackCandidates = useMemo(() => {
+    if (playbackOrderResult.status !== 'ready' || !dataState.data) {
+      return [];
+    }
+
+    const { order } = playbackOrderResult;
+    const cycleStartUtcMs =
+      order.source.sourceStartUtcMs + order.currentLoopIndex * order.totalDurationMs;
+    let cursorUtcMs = cycleStartUtcMs;
+
+    return order.tracks.map((track: PlaylistVersionTrack, index: number) => {
+      const trackStartUtcMs = cursorUtcMs;
+      const trackEndUtcMs = cursorUtcMs + track.durationMs;
+      cursorUtcMs = trackEndUtcMs;
+
+      return {
+        trackId: track.trackId,
+        durationMs: track.durationMs,
+        metadata: dataState.data?.tracks[track.trackId] ?? null,
+        trackIndex: index,
+        trackStartUtcMs,
+        trackEndUtcMs,
+      };
+    });
+  }, [dataState.data, playbackOrderResult]);
+
   const upcoming = useMemo(() => {
     if (upcomingResult.status !== 'ready') {
       return [];
@@ -89,9 +124,11 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
 
     return upcomingResult.tracks.map((item) => {
       const track = dataState.data?.tracks[item.trackId];
+      const isUnavailable = dataState.data?.unavailableTrackIds.includes(item.trackId) ?? false;
+
       return {
         ...item,
-        title: track?.title,
+        title: track?.title ?? (isUnavailable ? 'Unavailable track' : undefined),
         artist: track?.artist,
         durationMs: item.durationMs,
       };
@@ -109,6 +146,8 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
     liveResult,
     currentTrack,
     liveState,
+    playbackCandidates,
+    missingTrackIds: dataState.data?.unavailableTrackIds ?? [],
     upcoming,
     upcomingResult,
     scheduleEvents: dataState.data?.scheduleEvents ?? [],

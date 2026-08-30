@@ -11,6 +11,7 @@ const ADMIN_NAV = [
   { to: '/admin', label: 'Dashboard', isEnd: true },
   { to: '/admin/library', label: 'Library', isEnd: false },
   { to: '/admin/playlists', label: 'Playlists', isEnd: false },
+  { to: '/admin/playlist-submissions', label: 'Playlist Submissions', isEnd: false },
   { to: '/admin/schedule', label: 'Schedule', isEnd: false },
   { to: '/admin/messages', label: 'Messages', isEnd: false },
   { to: '/admin/station', label: 'Station', isEnd: false },

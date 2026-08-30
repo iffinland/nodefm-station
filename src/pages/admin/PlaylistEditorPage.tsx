@@ -15,6 +15,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
+import { QdnTransactionFlow } from '../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../components/qdnTransactionFlow';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useLibrary } from '../../hooks/useLibrary';
 import { useStation, useStationIdentity } from '../../features/station';
@@ -90,6 +96,7 @@ export default function PlaylistEditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<string | null>(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
   const [versionActionBusy, setVersionActionBusy] = useState<string | null>(null);
   const [versionActionResult, setVersionActionResult] = useState<string | null>(null);
   const [showAddTracks, setShowAddTracks] = useState(false);
@@ -103,6 +110,7 @@ export default function PlaylistEditorPage() {
     setEditingMeta(false);
     setError(null);
     setPublishResult(null);
+    setTransaction(null);
     setVersionActionBusy(null);
     setVersionActionResult(null);
     setShowAddTracks(false);
@@ -265,25 +273,75 @@ export default function PlaylistEditorPage() {
     setPublishing(true);
     setError(null);
     setPublishResult(null);
+    setTransaction(
+      createQdnTransactionState(
+        [
+          { id: 'version', label: 'Publish immutable playlist version' },
+          { id: 'pointer', label: 'Update playlist pointer' },
+        ],
+        { retryable: true },
+      ),
+    );
 
     const snapshot: PlaylistVersionTrack[] = createTrackSnapshot(draftTracks);
 
-    const result = await publishVersion({
-      playlistId: playlist.playlistId,
-      createdBy: ownerAddress,
-      tracks: snapshot,
-      lastVersion: latestVersion,
-    });
+    const result = await publishVersion(
+      {
+        playlistId: playlist.playlistId,
+        createdBy: ownerAddress,
+        tracks: snapshot,
+        lastVersion: latestVersion,
+      },
+      (chunk) => {
+        setTransaction((current) =>
+          current ? markQdnTransactionChunkActive(current, chunk) : current,
+        );
+      },
+    );
 
     if (result.ok) {
       clearPlaylistDraft(ownerAddress, playlist.playlistId);
       setPublishResult(`Version ${result.version.versionNumber} published successfully.`);
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: `Version ${result.version.versionNumber} published successfully.`,
+              retryable: false,
+            }
+          : current,
+      );
     } else if ('partial' in result && result.partial) {
-      setPublishResult(
-        `Version published but playlist update had an issue: ${result.error}. The version ID is safe.`,
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'partial' as const,
+              error: result.error,
+              retryable: true,
+            }
+          : current,
       );
     } else {
       setError(result.error);
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error: result.error,
+              retryable: true,
+            }
+          : current,
+      );
     }
 
     setPublishing(false);
@@ -671,6 +729,17 @@ export default function PlaylistEditorPage() {
           </div>
         )}
       </div>
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Publish Playlist Version"
+          state={transaction}
+          onClose={() => setTransaction(null)}
+          onRetry={() => {
+            setTransaction(null);
+            void handlePublish();
+          }}
+        />
+      ) : null}
     </PageShell>
   );
 }

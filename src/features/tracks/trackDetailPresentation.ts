@@ -25,7 +25,9 @@ export type TrackDetailPresentation = {
 };
 
 export function getTrackDetailSourceLabel(source: TrackSource): string {
-  return source === 'station-upload' ? 'Station upload' : 'Existing QDN audio';
+  if (source === 'station-upload') return 'Station upload';
+  if (source === 'listener-owned') return 'Your upload';
+  return 'Existing QDN audio';
 }
 
 export function getTrackDetailPresentation(track: Track): TrackDetailPresentation {

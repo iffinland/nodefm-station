@@ -28,6 +28,7 @@ import {
   getQdnResourceReadErrorCode,
   isConfirmedQdnNotFoundError,
 } from '../../../qortium/qdnReadError';
+import { mapWithConcurrency } from '../../../utils/mapConcurrent';
 
 // ── In-Memory Store ─────────────────────────────────────────────────
 
@@ -194,11 +195,16 @@ export async function loadLibrary(ownerName: string, ownerAddress: string): Prom
     const seenTrackIdentifiers = new Set<string>();
     let incomplete = false;
 
+    const identifiers = [];
     for (const result of results) {
       if (!result.identifier || !result.identifier.startsWith(TRACK_IDENTIFIER_PREFIX)) continue;
       if (seenTrackIdentifiers.has(result.identifier)) continue;
+      seenTrackIdentifiers.add(result.identifier);
+      identifiers.push(result.identifier);
+    }
+    const identifierOrder = new Map(identifiers.map((identifier, index) => [identifier, index]));
 
-      const identifier = result.identifier;
+    await mapWithConcurrency(identifiers, 8, async (identifier) => {
       const trackId = identifier.slice(TRACK_IDENTIFIER_PREFIX.length);
 
       try {
@@ -211,10 +217,9 @@ export async function loadLibrary(ownerName: string, ownerAddress: string): Prom
             detail: 'Track owner does not match the station owner.',
           });
           incomplete = true;
-          continue;
+          return;
         }
 
-        seenTrackIdentifiers.add(identifier);
         tracks.push(track);
       } catch (error) {
         if (isConfirmedQdnNotFoundError(error)) {
@@ -223,7 +228,7 @@ export async function loadLibrary(ownerName: string, ownerAddress: string): Prom
             code: 'RESOURCE_NOT_FOUND',
             detail: error instanceof Error ? error.message : 'Track resource was not found.',
           });
-          continue;
+          return;
         }
 
         const code = getQdnResourceReadErrorCode(error);
@@ -234,7 +239,15 @@ export async function loadLibrary(ownerName: string, ownerAddress: string): Prom
         });
         incomplete = true;
       }
-    }
+    });
+
+    tracks.sort((left, right) => {
+      const leftIndex =
+        identifierOrder.get(getTrackQdnIdentifier(left.trackId)) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex =
+        identifierOrder.get(getTrackQdnIdentifier(right.trackId)) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
 
     if (epoch !== libraryEpoch || libraryActiveScope !== targetScope) {
       return;

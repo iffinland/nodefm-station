@@ -16,6 +16,7 @@ import type {
   Track,
 } from '../../../types/domain';
 import { fetchQdnResourceData } from '../../../qortium/qdn';
+import { isConfirmedQdnNotFoundError } from '../../../qortium/qdnReadError';
 import {
   deserializePlaylistVersionFromQdn,
   getPlaylistVersionQdnIdentifier,
@@ -24,6 +25,7 @@ import { deserializeTrackFromQdn, getTrackQdnIdentifier } from '../../tracks/ser
 import { isValidPlaylistVersionRecord } from './timelineMath';
 import { loadScheduleEventsForPublisher } from '../../scheduling/services/scheduleStore';
 import { loadRequestShowOccurrencesForPublisher } from '../../dynamic-programs/request-show/requestShowStore';
+import { mapWithConcurrency } from '../../../utils/mapConcurrent';
 
 export type RadioTimelineData = {
   station: Station;
@@ -31,6 +33,7 @@ export type RadioTimelineData = {
   playlistVersions: Record<string, PlaylistVersion>;
   dynamicOccurrences: Record<string, DynamicProgramOccurrence>;
   tracks: Record<string, Track>;
+  unavailableTrackIds: string[];
 };
 
 type DataListener = () => void;
@@ -137,6 +140,7 @@ export async function loadRadioTimelineData(
   try {
     const playlistVersions: Record<string, PlaylistVersion> = {};
     const tracks: Record<string, Track> = {};
+    const unavailableTrackIds: string[] = [];
     const dynamicOccurrences: Record<string, DynamicProgramOccurrence> = {};
     const versionIds = new Set<string>([station.defaultRotationPlaylistVersionId]);
 
@@ -178,15 +182,27 @@ export async function loadRadioTimelineData(
       }
     }
 
-    for (const trackId of trackIds) {
-      const payload = await fetchRecord({
-        service: 'JSON',
-        name: publisherName,
-        identifier: getTrackQdnIdentifier(trackId),
-      });
+    await mapWithConcurrency([...trackIds], 8, async (trackId) => {
+      let payload: unknown;
+
+      try {
+        payload = await fetchRecord({
+          service: 'JSON',
+          name: publisherName,
+          identifier: getTrackQdnIdentifier(trackId),
+        });
+      } catch (error) {
+        if (isConfirmedQdnNotFoundError(error)) {
+          unavailableTrackIds.push(trackId);
+          return;
+        }
+
+        throw error;
+      }
+
       const track = requireTrack(payload, trackId);
       tracks[trackId] = track;
-    }
+    });
 
     if (epoch !== dataEpoch || dataLoadKey !== targetKey) {
       return;
@@ -198,6 +214,7 @@ export async function loadRadioTimelineData(
       playlistVersions,
       dynamicOccurrences,
       tracks,
+      unavailableTrackIds,
     };
     dataLoaded = true;
   } catch (error) {

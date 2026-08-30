@@ -36,6 +36,7 @@ import {
   serializeDynamicProgramOccurrenceForQdn,
   type CreateDynamicProgramDefinitionInput,
 } from './requestShowService';
+import { mapWithConcurrency } from '../../../utils/mapConcurrent';
 
 type RequestShowListener = () => void;
 
@@ -368,21 +369,24 @@ export async function loadRequestShowOccurrencesForPublisher(
   });
 
   const seen = new Set<string>();
-  const occurrences: DynamicProgramOccurrence[] = [];
-
+  const identifiers = [];
   for (const result of results) {
     if (
       !result.identifier ||
-      !result.identifier.startsWith(REQUEST_SHOW_OCCURRENCE_IDENTIFIER_PREFIX)
+      !result.identifier.startsWith(REQUEST_SHOW_OCCURRENCE_IDENTIFIER_PREFIX) ||
+      seen.has(result.identifier)
     ) {
       continue;
     }
+    seen.add(result.identifier);
+    identifiers.push(result);
+  }
 
-    if (seen.has(result.identifier)) {
-      continue;
+  return mapWithConcurrency(identifiers, 8, async (result) => {
+    if (!result.identifier) {
+      throw new Error('Request Show search result is missing an identifier.');
     }
 
-    seen.add(result.identifier);
     const payload = await fetchQdnResourceData({
       service: REQUEST_SHOW_QDN_SERVICE,
       name: publisherName,
@@ -394,10 +398,8 @@ export async function loadRequestShowOccurrencesForPublisher(
       throw new Error(`Malformed Request Show occurrence resource: ${result.identifier}`);
     }
 
-    occurrences.push(occurrence);
-  }
-
-  return occurrences;
+    return occurrence;
+  });
 }
 
 export async function createRequestShowDefinitionAction(

@@ -8,6 +8,7 @@ export type {
   PlaylistVisibility,
   PlaylistVersion,
   PlaylistVersionTrack,
+  PlaylistVersionTrackKind,
   ScheduleEvent,
   ScheduleEventSource,
   ScheduleEventSourcePlaylist,

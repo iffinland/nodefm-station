@@ -13,6 +13,7 @@ import {
   floorMod,
   getUpcomingTracks,
   permutePlaylistVersionTracks,
+  resolvePlaybackTrackOrder,
   resolveLiveState,
 } from '../features/radio/timeline';
 import type {
@@ -725,5 +726,37 @@ describe('timeline invariants', () => {
       mode: base.live.mode,
       playlistVersionId: base.live.playlistVersionId,
     });
+  });
+});
+
+describe('resolvePlaybackTrackOrder', () => {
+  const defaultVersion = version('default-playlist', 'default-version', [
+    { trackId: 'A', durationMs: 60_000 },
+    { trackId: 'B', durationMs: 60_000 },
+    { trackId: 'C', durationMs: 60_000 },
+  ]);
+  const playbackTracks = permutePlaylistVersionTracks(
+    defaultVersion.tracks,
+    buildAutoDjSessionPermutationSeed('station-1', 'default-version', EPOCH),
+  );
+  const ctx = input({ playlistVersions: { 'default-version': defaultVersion } });
+
+  it('returns the active ordered tracks and current index', () => {
+    const result = resolvePlaybackTrackOrder(EPOCH + 90_000, ctx);
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') return;
+
+    expect(result.order.tracks.map((track) => track.trackId)).toEqual(
+      playbackTracks.map((track) => track.trackId),
+    );
+    expect(result.order.currentIndex).toBe(1);
+  });
+
+  it('returns the same active order on repeated equal inputs', () => {
+    const first = resolvePlaybackTrackOrder(EPOCH + 90_000, ctx);
+    const second = resolvePlaybackTrackOrder(EPOCH + 90_000, ctx);
+
+    expect(second).toEqual(first);
   });
 });

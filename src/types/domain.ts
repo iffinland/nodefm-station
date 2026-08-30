@@ -60,7 +60,7 @@ export type StationMusicScope = 'INTERNATIONAL' | 'REGIONAL' | 'MIXED';
 
 // ── Track ───────────────────────────────────────────────────────────
 
-export type TrackSource = 'station-upload' | 'qdn-existing';
+export type TrackSource = 'station-upload' | 'qdn-existing' | 'listener-owned';
 
 export type Track = {
   schemaVersion: number;
@@ -121,9 +121,24 @@ export type Playlist = {
 
 // ── Playlist Version (immutable) ────────────────────────────────────
 
+export type PlaylistVersionTrackKind = 'STATION_TRACK' | 'OWNER_TRACK';
+
 export type PlaylistVersionTrack = {
   trackId: string;
   durationMs: number;
+  /**
+   * Identifies whether this immutable reference resolves through the station
+   * Track service or through the playlist owner's listener Track submission.
+   *
+   * Omitted values remain backward-compatible with previously published
+   * station-only PlaylistVersion resources.
+   */
+  kind?: PlaylistVersionTrackKind;
+  /**
+   * Required for OWNER_TRACK references and intentionally absent for
+   * STATION_TRACK references.
+   */
+  ownerName?: string;
 };
 
 export type PlaylistVersion = {

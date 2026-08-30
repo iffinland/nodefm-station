@@ -11,6 +11,12 @@ import { useState } from 'react';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
 import { Modal } from '../../../components/Modal';
+import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../../components/qdnTransactionFlow';
 import { formatDurationMs } from '../../../utils/duration';
 import { buildQdnUrl, openQdnAddress } from '../../../qortium/navigation';
 import { TrackCover } from '../../library/components/TrackCover';
@@ -32,6 +38,7 @@ export function ListenerUploadsAdminPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
   const pagination = usePagination(reviews.length);
   const pageReviews = paginateItems(reviews, pagination.pageIndex, pagination.pageSize);
 
@@ -46,6 +53,7 @@ export function ListenerUploadsAdminPanel() {
     setAction(null);
     setActionError(null);
     setRejectReason('');
+    setTransaction(null);
   };
 
   const runAction = async () => {
@@ -53,6 +61,20 @@ export function ListenerUploadsAdminPanel() {
 
     setActionBusy(true);
     setActionError(null);
+    setTransaction(
+      createQdnTransactionState(
+        [
+          {
+            id: 'moderation',
+            label: `${action.type === 'accept' ? 'Accept' : 'Reject'} listener upload`,
+          },
+        ],
+        { retryable: true },
+      ),
+    );
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'moderation') : current,
+    );
 
     try {
       if (action.type === 'accept') {
@@ -63,11 +85,37 @@ export function ListenerUploadsAdminPanel() {
       }
 
       await refresh();
-      setAction(null);
       setRejectReason('');
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: `Submission ${action.type === 'accept' ? 'accepted' : 'rejected'}.`,
+              retryable: false,
+            }
+          : current,
+      );
     } catch (actionFailure) {
       setActionError(
         actionFailure instanceof Error ? actionFailure.message : 'Moderation action failed.',
+      );
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error:
+                actionFailure instanceof Error
+                  ? actionFailure.message
+                  : 'Moderation action failed.',
+              retryable: true,
+            }
+          : current,
       );
     } finally {
       setActionBusy(false);
@@ -147,46 +195,61 @@ export function ListenerUploadsAdminPanel() {
           onClose={closeAction}
         >
           <div className="submission-review-modal">
-            <p>
-              <strong>{action.review.submission.title}</strong>
-              {action.review.submission.artist ? ` — ${action.review.submission.artist}` : ''}
-            </p>
-            <p>
-              Submitted by <strong>{action.review.submission.submitterName}</strong>
-            </p>
-
-            {action.type === 'accept' ? (
-              <p>
-                Accepting this submission creates a normal Station Track whose audio continues to
-                reference the listener&apos;s published AUDIO resource.
-              </p>
+            {transaction ? (
+              <QdnTransactionFlow
+                title={action.type === 'accept' ? 'Accept submission' : 'Reject submission'}
+                state={transaction}
+                standalone={false}
+                onClose={() => {
+                  setTransaction(null);
+                  setAction(null);
+                }}
+                onRetry={() => void runAction()}
+              />
             ) : (
-              <label className="form-field">
-                Reason (optional)
-                <textarea
-                  value={rejectReason}
-                  onChange={(event) => setRejectReason(event.target.value)}
-                  rows={3}
-                  placeholder="Optional note for the station's audit record"
-                />
-              </label>
+              <>
+                <p>
+                  <strong>{action.review.submission.title}</strong>
+                  {action.review.submission.artist ? ` — ${action.review.submission.artist}` : ''}
+                </p>
+                <p>
+                  Submitted by <strong>{action.review.submission.submitterName}</strong>
+                </p>
+
+                {action.type === 'accept' ? (
+                  <p>
+                    Accepting this submission creates a normal Station Track whose audio continues
+                    to reference the listener&apos;s published AUDIO resource.
+                  </p>
+                ) : (
+                  <label className="form-field">
+                    Reason (optional)
+                    <textarea
+                      value={rejectReason}
+                      onChange={(event) => setRejectReason(event.target.value)}
+                      rows={3}
+                      placeholder="Optional note for the station's audit record"
+                    />
+                  </label>
+                )}
+
+                {actionError ? <p className="form-error">{actionError}</p> : null}
+
+                <div className="form-actions">
+                  <button className="button button--secondary" type="button" onClick={closeAction}>
+                    Cancel
+                  </button>
+                  <button
+                    className="button button--primary"
+                    type="button"
+                    onClick={() => void runAction()}
+                    disabled={actionBusy}
+                  >
+                    {actionBusy ? 'Saving…' : action.type === 'accept' ? 'Accept' : 'Reject'}
+                  </button>
+                </div>
+              </>
             )}
-
-            {actionError ? <p className="form-error">{actionError}</p> : null}
-
-            <div className="form-actions">
-              <button className="button button--secondary" type="button" onClick={closeAction}>
-                Cancel
-              </button>
-              <button
-                className="button button--primary"
-                type="button"
-                onClick={() => void runAction()}
-                disabled={actionBusy}
-              >
-                {actionBusy ? 'Saving…' : action.type === 'accept' ? 'Accept' : 'Reject'}
-              </button>
-            </div>
           </div>
         </Modal>
       ) : null}

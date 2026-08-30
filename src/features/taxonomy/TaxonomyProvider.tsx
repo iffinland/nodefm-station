@@ -20,7 +20,7 @@ import {
 import { mergeTaxonomySuggestions } from './taxonomyService';
 
 export function TaxonomyProvider({ children }: { children: ReactNode }) {
-  const { tracks } = useLibrary();
+  const { tracks } = useLibrary({ loadOnMount: false });
   const { ownerAddress, publisherName } = useStationIdentity();
   const memoryScope = publisherName ?? ownerAddress ?? 'public';
   const [memory, setMemory] = useState<TaxonomyMemory>(() => loadTaxonomyMemory(memoryScope));

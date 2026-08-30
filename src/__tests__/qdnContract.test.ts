@@ -408,6 +408,25 @@ describe('QDN resource readiness', () => {
     ).rejects.toThrow(/does not exist/);
   });
 
+  it('classifies a status lookup Core 1401 as NOT_FOUND', async () => {
+    mockedSend.mockRejectedValue(
+      new Error(
+        "QDN error 1401: Couldn't find PUT transaction for name Owner, service AUDIO and identifier audio-1",
+      ),
+    );
+
+    try {
+      await ensureQdnResourceReady(
+        { service: 'AUDIO', name: 'Owner', identifier: 'audio-1' },
+        { retries: 1, delayMs: 1 },
+      );
+      throw new Error('Expected ensureQdnResourceReady to reject');
+    } catch (error) {
+      expect(error).toBeInstanceOf(QdnResourceReadError);
+      expect((error as QdnResourceReadError).code).toBe('NOT_FOUND');
+    }
+  });
+
   it('never treats uncertainty as ready', async () => {
     mockedSend.mockResolvedValue({ status: 'BUILDING' });
 

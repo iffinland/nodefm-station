@@ -42,7 +42,8 @@ export type UseLibraryResult = {
   refresh: () => Promise<void>;
 };
 
-export function useLibrary(): UseLibraryResult {
+export function useLibrary(options: { loadOnMount?: boolean } = {}): UseLibraryResult {
+  const shouldLoadOnMount = options.loadOnMount !== false;
   const { ownerAddress, publisherName } = useStationIdentity();
 
   const [tracks, setTracks] = useState<Track[]>(getLibraryTracks());
@@ -77,6 +78,10 @@ export function useLibrary(): UseLibraryResult {
   }, [ownerAddress, publisherName]);
 
   useEffect(() => {
+    if (!shouldLoadOnMount) {
+      return;
+    }
+
     const action = getLibraryLoadAction(publisherName, ownerAddress);
 
     if (action === 'clear') {
@@ -110,7 +115,7 @@ export function useLibrary(): UseLibraryResult {
       setDiagnostics([]);
       loadLibrary(publisherName, ownerAddress);
     }
-  }, [ownerAddress, publisherName]);
+  }, [ownerAddress, publisherName, shouldLoadOnMount]);
 
   const removeTrack = useCallback(
     async (trackId: string) => {

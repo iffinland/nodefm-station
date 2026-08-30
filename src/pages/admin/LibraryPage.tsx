@@ -11,6 +11,12 @@ import { PageShell } from '../../components/PageShell';
 import { LoadingState } from '../../components/LoadingState';
 import { ErrorState } from '../../components/ErrorState';
 import { Modal } from '../../components/Modal';
+import { QdnTransactionFlow } from '../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../components/qdnTransactionFlow';
 import { useLibrary } from '../../hooks/useLibrary';
 import { useStationIdentity } from '../../features/station';
 import { formatDurationMs } from '../../utils/duration';
@@ -49,6 +55,7 @@ export default function LibraryPage() {
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
   const { ownerAddress, publisherName } = useStationIdentity();
   const bulkScope = ownerAddress ?? publisherName ?? '';
 
@@ -92,17 +99,44 @@ export default function LibraryPage() {
 
   const handleDeleteTrack = useCallback(
     async (trackId: string, title: string) => {
-      if (
-        window.confirm(
-          `Remove "${title}" from the library? This tombstones the track metadata. The audio/cover QDN resources are left intact.`,
-        )
-      ) {
-        setRemoveError(null);
-        try {
-          await removeTrack(trackId);
-        } catch (err) {
-          setRemoveError(err instanceof Error ? err.message : 'Failed to remove track.');
-        }
+      setRemoveError(null);
+      setTransaction(
+        createQdnTransactionState([{ id: 'remove', label: `Remove "${title}" from the library` }], {
+          retryable: true,
+        }),
+      );
+      setTransaction((current) =>
+        current ? markQdnTransactionChunkActive(current, 'remove') : current,
+      );
+
+      try {
+        await removeTrack(trackId);
+        setTransaction((current) =>
+          current
+            ? {
+                ...current,
+                chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+                phase: 'success' as const,
+                successMessage: 'Track removed.',
+                retryable: false,
+              }
+            : current,
+        );
+      } catch (err) {
+        setRemoveError(err instanceof Error ? err.message : 'Failed to remove track.');
+        setTransaction((current) =>
+          current
+            ? {
+                ...current,
+                chunks: current.chunks.map((item) =>
+                  item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+                ),
+                phase: 'failed' as const,
+                error: err instanceof Error ? err.message : 'Failed to remove track.',
+                retryable: true,
+              }
+            : current,
+        );
       }
     },
     [removeTrack],
@@ -277,6 +311,14 @@ export default function LibraryPage() {
       {editingTrack && (
         <TrackEditModal track={editingTrack} onClose={() => setEditingTrack(null)} />
       )}
+
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Remove Track"
+          state={transaction}
+          onClose={() => setTransaction(null)}
+        />
+      ) : null}
     </PageShell>
   );
 }

@@ -11,6 +11,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../../app/providers/authContext';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
+import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../../components/qdnTransactionFlow';
 import { selectPublishSource, type SelectPublishSourceResult } from '../../../qortium/qdn';
 import { generateId } from '../../../utils/id';
 import type { ListenerTrackSubmission, QdnResourceRef } from '../../../types/domain';
@@ -69,11 +75,18 @@ function initialFormState(overrides: Partial<FormState> = {}): FormState {
   };
 }
 
-export function SubmitMusicForm() {
+export function SubmitMusicForm({
+  onPublished,
+  embedded = false,
+}: {
+  onPublished?: (submission: ListenerTrackSubmission) => void;
+  embedded?: boolean;
+} = {}) {
   const { auth } = useAuth();
   const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
   const submissionIdRef = useRef(generateId());
   const [state, setState] = useState<FormState>(initialFormState);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
 
   const submitterName = auth.status === 'authenticated' ? auth.name?.trim() || null : null;
   const submitterAddress = auth.status === 'authenticated' ? auth.address : null;
@@ -85,6 +98,7 @@ export function SubmitMusicForm() {
   const resetForNewSubmission = useCallback(() => {
     submissionIdRef.current = generateId();
     setState(initialFormState());
+    setTransaction(null);
   }, []);
 
   useEffect(() => {
@@ -187,6 +201,17 @@ export function SubmitMusicForm() {
     }
 
     setState((current) => ({ ...current, step: 'publishing', error: null }));
+    const specs = [
+      { id: 'audio', label: 'Publish listener-owned audio' },
+      ...(state.coverFile && state.coverBase64
+        ? [{ id: 'cover', label: 'Publish optional cover image' }]
+        : []),
+      { id: 'metadata', label: 'Resolve duration and publish submission metadata' },
+    ];
+    setTransaction(createQdnTransactionState(specs, { retryable: true }));
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'audio') : current,
+    );
 
     const genres = state.genres.trim()
       ? getCanonicalTaxonomyValues(state.genres, genreSuggestions)
@@ -223,6 +248,18 @@ export function SubmitMusicForm() {
     if (result.status === 'published') {
       remember('genres', genres ?? []);
       remember('tags', tags ?? []);
+      onPublished?.(result.submission);
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: 'Upload complete — Added to My Uploads.',
+              retryable: false,
+            }
+          : current,
+      );
       setState((current) => ({
         ...current,
         step: 'done',
@@ -235,6 +272,26 @@ export function SubmitMusicForm() {
     }
 
     if (result.status === 'partial') {
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.id === 'audio'
+                  ? { ...item, status: 'succeeded' as const }
+                  : item.id === 'cover'
+                    ? {
+                        ...item,
+                        status: result.cover ? ('succeeded' as const) : ('skipped' as const),
+                      }
+                    : { ...item, status: 'failed' as const },
+              ),
+              phase: 'partial' as const,
+              error: result.reason,
+              retryable: true,
+            }
+          : current,
+      );
       setState((current) => ({
         ...current,
         step: 'partial',
@@ -248,7 +305,21 @@ export function SubmitMusicForm() {
     }
 
     setState((current) => ({ ...current, step: 'error', error: result.reason }));
+    setTransaction((current) =>
+      current
+        ? {
+            ...current,
+            chunks: current.chunks.map((item) =>
+              item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+            ),
+            phase: 'failed' as const,
+            error: result.reason,
+            retryable: true,
+          }
+        : current,
+    );
   }, [
+    onPublished,
     state.artist,
     state.album,
     state.releaseDate,
@@ -272,9 +343,31 @@ export function SubmitMusicForm() {
     }
 
     setState((current) => ({ ...current, step: 'publishing', error: null }));
+    setTransaction((current) =>
+      current
+        ? markQdnTransactionChunkActive(current, 'metadata')
+        : createQdnTransactionState(
+            [
+              { id: 'audio', label: 'Publish listener-owned audio' },
+              { id: 'metadata', label: 'Resolve duration and publish submission metadata' },
+            ],
+            { retryable: true },
+          ),
+    );
 
     try {
       await publishSubmissionMetadata(state.submissionDraft, submitterName);
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: 'Upload complete — Added to My Uploads.',
+              retryable: false,
+            }
+          : current,
+      );
       setState((current) => ({
         ...current,
         step: 'done',
@@ -289,6 +382,20 @@ export function SubmitMusicForm() {
         step: 'partial',
         error: metadataError instanceof Error ? metadataError.message : 'Metadata retry failed.',
       }));
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.id === 'metadata' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'partial' as const,
+              error:
+                metadataError instanceof Error ? metadataError.message : 'Metadata retry failed.',
+              retryable: true,
+            }
+          : current,
+      );
     }
   }, [state.submissionDraft, submitterName]);
 
@@ -314,65 +421,48 @@ export function SubmitMusicForm() {
     );
   }
 
-  if (state.step === 'publishing') {
-    return <LoadingState message="Publishing your submission to QDN…" />;
-  }
+  if (
+    state.step === 'publishing' ||
+    state.step === 'done' ||
+    state.step === 'partial' ||
+    state.step === 'error'
+  ) {
+    const title =
+      state.step === 'partial'
+        ? 'Submission is incomplete'
+        : state.step === 'error'
+          ? 'Submission failed'
+          : 'Submit Music';
 
-  if (state.step === 'done') {
     return (
-      <div className="submit-music__done">
-        <h2>Submission sent</h2>
-        <p>
-          Your music was published to QDN and sent to the station owner for review. If accepted, it
-          can become a normal NodeFM Station Track.
-        </p>
-        <div className="form-actions">
-          <button className="button button--primary" type="button" onClick={resetForNewSubmission}>
-            Submit Another
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.step === 'partial') {
-    return (
-      <div className="submit-music__partial">
-        <h2>Submission is incomplete</h2>
-        <p>
-          {state.partialReason ??
-            'Your media published, but the submission could not be completed.'}
-        </p>
-        {state.audioRef ? (
-          <p className="submit-music__hint">
-            Audio is already published and will be reused if you retry the metadata step.
-          </p>
-        ) : null}
-        {state.error ? <p className="form-error">{state.error}</p> : null}
-        <div className="form-actions">
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={resetForNewSubmission}
-          >
-            Start New Submission
-          </button>
-          {state.submissionDraft ? (
-            <button className="button button--primary" type="button" onClick={handleRetryMetadata}>
-              Retry Submission
-            </button>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  if (state.step === 'error') {
-    return (
-      <ErrorState
-        message="Submission failed"
-        detail={state.error ?? undefined}
-        onRetry={() => setState((current) => ({ ...current, step: 'form', error: null }))}
+      <QdnTransactionFlow
+        title={title}
+        state={
+          transaction ??
+          createQdnTransactionState(
+            state.step === 'error'
+              ? [{ id: 'submission', label: 'Publish music submission' }]
+              : [{ id: 'submission', label: 'Publish music submission' }],
+            { retryable: true },
+          )
+        }
+        standalone={!embedded}
+        onClose={() => {
+          if (state.step === 'done' || state.step === 'error') {
+            resetForNewSubmission();
+          } else {
+            setState((current) => ({ ...current, step: 'form', error: null }));
+            setTransaction(null);
+          }
+        }}
+        onRetry={() => {
+          if (state.step === 'partial' && state.submissionDraft) {
+            void handleRetryMetadata();
+          } else {
+            setState((current) => ({ ...current, step: 'form', error: null }));
+            setTransaction(null);
+          }
+        }}
       />
     );
   }

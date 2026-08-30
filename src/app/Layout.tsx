@@ -8,17 +8,19 @@
  * ============================================================ */
 
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStation } from '../features/station';
 import { useLiveRadioPlayerContext } from '../features/radio/player';
 import { formatDurationMs } from '../utils/duration';
-import { useLibrary } from '../hooks/useLibrary';
 import { TrackDetailModal } from '../features/tracks';
+import { PageErrorBoundary } from '../components/PageErrorBoundary';
+import { recordStartupEvent } from '../services/perf/startupDiagnostics';
 import type { Track } from '../types/domain';
 
 const PUBLIC_NAV = [
   { to: '/', label: 'Radio' },
   { to: '/playlists', label: 'Playlists' },
+  { to: '/my-playlists', label: 'My Playlists' },
   { to: '/submit-music', label: 'Submit Music' },
   { to: '/about', label: 'About' },
 ] as const;
@@ -26,7 +28,6 @@ const PUBLIC_NAV = [
 export function Layout() {
   const location = useLocation();
   const { isOwner, station } = useStation();
-  const { getTrack } = useLibrary();
   const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const {
     playerState,
@@ -44,7 +45,7 @@ export function Layout() {
 
   const liveState = timeline.liveState;
   const currentTrack = playerState.currentTrack;
-  const fullCurrentTrack = currentTrack ? getTrack(currentTrack.trackId) : undefined;
+  const fullCurrentTrack = timeline.currentTrack;
   const isPlaying = playerState.playbackState === 'playing';
   const progressMs = Math.max(0, Math.round(playerState.currentOffsetSec * 1000));
   const hasNoStation = timeline.stationLoaded && !station && !timeline.stationLoading;
@@ -54,6 +55,10 @@ export function Layout() {
     (liveState?.trackEndUtcMs !== undefined && liveState?.trackStartUtcMs !== undefined
       ? liveState.trackEndUtcMs - liveState.trackStartUtcMs
       : 0);
+
+  useEffect(() => {
+    recordStartupEvent('APP_SHELL_VISIBLE', { completion: 'success' });
+  }, []);
 
   return (
     <div className="layout layout--public">
@@ -85,7 +90,9 @@ export function Layout() {
       </header>
 
       <main className="layout__main">
-        <Outlet />
+        <PageErrorBoundary key={location.pathname}>
+          <Outlet />
+        </PageErrorBoundary>
       </main>
 
       <footer className="layout__player-bar" aria-label="Audio player">

@@ -7,7 +7,7 @@
  * ============================================================ */
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { PageShell } from '../components/PageShell';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -26,6 +26,7 @@ import { PaginationControls, paginateItems, usePagination } from '../features/pa
 
 export default function PlaylistDetailPage() {
   const { playlistId } = useParams<{ playlistId: string }>();
+  const [searchParams] = useSearchParams();
   const { publisherName, loading: stationLoading } = useStation();
   const {
     playerState,
@@ -47,34 +48,40 @@ export default function PlaylistDetailPage() {
   const [detailTrack, setDetailTrack] = useState<Track | null>(null);
   const pagination = usePagination(result?.status === 'ready' ? result.detail.tracks.length : 0);
 
-  const load = useCallback(async (publisher: string, id: string) => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setStartError(null);
+  const load = useCallback(
+    async (publisher: string, id: string, kind: 'station' | 'listener') => {
+      setLoading(true);
+      setError(null);
+      setResult(null);
+      setStartError(null);
 
-    try {
-      setResult(await loadPublicPlaylistDetail(publisher, id));
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load playlist.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      try {
+        setResult(await loadPublicPlaylistDetail(publisher, id, kind, publisherName ?? undefined));
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load playlist.');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [publisherName],
+  );
 
   useEffect(() => {
     if (stationLoading) {
       return;
     }
 
-    if (!publisherName || !playlistId) {
+    const effectivePublisherName = searchParams.get('publisher')?.trim() || publisherName;
+    const kind = searchParams.get('kind') === 'listener' ? 'listener' : 'station';
+
+    if (!effectivePublisherName || !playlistId) {
       setLoading(false);
       setError('No station publisher is available.');
       return;
     }
 
-    load(publisherName, playlistId);
-  }, [load, playlistId, publisherName, stationLoading]);
+    load(effectivePublisherName, playlistId, kind);
+  }, [load, playlistId, publisherName, searchParams, stationLoading]);
 
   const detail: PublicPlaylistDetail | null = result?.status === 'ready' ? result.detail : null;
   const pageTracks = detail
@@ -133,7 +140,13 @@ export default function PlaylistDetailPage() {
         <ErrorState
           message="Failed to load playlist."
           detail={error}
-          onRetry={() => publisherName && playlistId && load(publisherName, playlistId)}
+          onRetry={() => {
+            const effectivePublisherName = searchParams.get('publisher')?.trim() || publisherName;
+            const kind = searchParams.get('kind') === 'listener' ? 'listener' : 'station';
+            if (effectivePublisherName && playlistId) {
+              load(effectivePublisherName, playlistId, kind);
+            }
+          }}
         />
       </PageShell>
     );
@@ -153,7 +166,13 @@ export default function PlaylistDetailPage() {
         <ErrorState
           message="Playlist is unavailable."
           detail={result.message}
-          onRetry={() => publisherName && playlistId && load(publisherName, playlistId)}
+          onRetry={() => {
+            const effectivePublisherName = searchParams.get('publisher')?.trim() || publisherName;
+            const kind = searchParams.get('kind') === 'listener' ? 'listener' : 'station';
+            if (effectivePublisherName && playlistId) {
+              load(effectivePublisherName, playlistId, kind);
+            }
+          }}
         />
       </PageShell>
     );

@@ -5,10 +5,11 @@
  * station metadata plus owner authorization.
  * ============================================================ */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from '../../app/providers/authContext';
 import { isStationOwner } from '../../qortium/auth';
 import { NODEFM_APP_NAME, getCanonicalNodeFmAppIdentity } from '../../qortium/navigation';
+import { recordStartupEvent } from '../../services/perf/startupDiagnostics';
 import type { Station } from '../../types/domain';
 import { StationContext, type StationContextValue } from './stationContext';
 import {
@@ -40,6 +41,8 @@ export function StationProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(getStationLoading());
   const [error, setError] = useState<string | null>(getStationError());
   const [publisherName, setPublisherName] = useState<string | null>(getStationPublisherName());
+  const stationStartRecordedRef = useRef(false);
+  const stationReadyRecordedRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToStationStore(() => {
@@ -76,6 +79,21 @@ export function StationProvider({ children }: { children: ReactNode }) {
     setPublisherName(null);
     loadStationConfig(NODEFM_APP_NAME);
   }, []);
+
+  useEffect(() => {
+    if (loading && !stationStartRecordedRef.current) {
+      stationStartRecordedRef.current = true;
+      recordStartupEvent('STATION_CONFIG_START');
+    }
+
+    if ((loaded || error) && !stationReadyRecordedRef.current) {
+      stationReadyRecordedRef.current = true;
+      recordStartupEvent('STATION_CONFIG_READY', {
+        completion: loaded ? 'success' : 'error',
+        detail: error ?? undefined,
+      });
+    }
+  }, [error, loaded, loading]);
 
   const refresh = useCallback(async () => {
     resetStationStore();

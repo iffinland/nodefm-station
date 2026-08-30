@@ -22,6 +22,11 @@ import {
   getQdnResourceReadErrorCode,
   isConfirmedQdnNotFoundError,
 } from '../../../qortium/qdnReadError';
+import {
+  getListenerPlaylistVersionQdnIdentifier,
+  LISTENER_PLAYLIST_IDENTIFIER_PREFIX,
+} from '../../listener-playlists/services/listenerPlaylistService';
+import { loadListenerPlaylistDetail } from '../../listener-playlists/services/listenerPlaylistDetailService';
 
 const PLAYLIST_SERVICE = 'PLAYLIST';
 const VERSION_SERVICE = 'JSON';
@@ -48,6 +53,7 @@ export type PublicPlaylistLoadResult = {
 export type PublicPlaylist = Playlist & {
   publisherName: string;
   qdnIdentifier: string;
+  kind: 'station' | 'listener';
   trackCount: number;
   totalDurationMs: number;
   versionStatus: PublicPlaylistVersionStatus;
@@ -122,14 +128,16 @@ function isPublicPlaylist(value: Playlist): boolean {
   return value.visibility === 'public';
 }
 
-async function loadPlaylistVersionForPublisher(
+async function loadPlaylistVersionForRef(
   publisherName: string,
-  playlist: Playlist,
+  ref: { service: string; identifier: string },
+  expectedVersionId: string,
+  playlistId: string,
 ): Promise<PlaylistVersion> {
   const payload = await fetchQdnResourceData({
-    service: VERSION_SERVICE,
+    service: ref.service,
     name: publisherName,
-    identifier: getPlaylistVersionQdnIdentifier(playlist.latestVersionId),
+    identifier: ref.identifier,
   });
   const version = deserializePlaylistVersionFromQdn(payload);
   const computedTotalDurationMs = version
@@ -138,13 +146,13 @@ async function loadPlaylistVersionForPublisher(
 
   if (
     !version ||
-    version.versionId !== playlist.latestVersionId ||
-    version.playlistId !== playlist.playlistId ||
+    version.versionId !== expectedVersionId ||
+    version.playlistId !== playlistId ||
     version.totalDurationMs <= 0 ||
     version.totalDurationMs !== computedTotalDurationMs ||
     version.tracks.length === 0
   ) {
-    throw new Error(`Invalid playlist version: ${playlist.latestVersionId}`);
+    throw new Error(`Invalid playlist version: ${expectedVersionId}`);
   }
 
   return version;
@@ -162,15 +170,32 @@ async function buildPublicPlaylist(
   publisherName: string,
   qdnIdentifier: string,
   playlist: Playlist,
+  kind: 'station' | 'listener',
 ): Promise<PublicPlaylist> {
   const coverUrl = await resolveCoverUrlForPlaylist(playlist);
 
   try {
-    const version = await loadPlaylistVersionForPublisher(publisherName, playlist);
+    const versionRef =
+      kind === 'listener'
+        ? {
+            service: VERSION_SERVICE,
+            identifier: getListenerPlaylistVersionQdnIdentifier(playlist.latestVersionId),
+          }
+        : {
+            service: VERSION_SERVICE,
+            identifier: getPlaylistVersionQdnIdentifier(playlist.latestVersionId),
+          };
+    const version = await loadPlaylistVersionForRef(
+      publisherName,
+      versionRef,
+      playlist.latestVersionId,
+      playlist.playlistId,
+    );
     return {
       ...playlist,
       publisherName,
       qdnIdentifier,
+      kind,
       trackCount: version.tracks.length,
       totalDurationMs: version.totalDurationMs,
       versionStatus: 'ready',
@@ -188,6 +213,7 @@ async function buildPublicPlaylist(
       ...playlist,
       publisherName,
       qdnIdentifier,
+      kind,
       trackCount: 0,
       totalDurationMs: 0,
       versionStatus,
@@ -204,7 +230,7 @@ export async function loadPublicPlaylists(
     return { status: 'complete', playlists: [], diagnostics: [] };
   }
 
-  const results = await searchQdnResources({
+  const stationResults = await searchQdnResources({
     service: PLAYLIST_SERVICE,
     name: publisherName,
     query: PLAYLIST_IDENTIFIER_PREFIX,
@@ -214,14 +240,34 @@ export async function loadPublicPlaylists(
     includeMetadata: true,
   });
 
+  const listenerResults = await searchQdnResources({
+    service: PLAYLIST_SERVICE,
+    query: LISTENER_PLAYLIST_IDENTIFIER_PREFIX,
+    prefix: true,
+    mode: 'ALL',
+    limit: 500,
+    includeMetadata: true,
+  });
+
   const uniqueRefs = new Map<string, { name: string; identifier: string }>();
 
-  for (const result of results) {
+  for (const result of stationResults) {
     if (
       !result.name ||
       result.name !== publisherName ||
       !result.identifier?.startsWith(PLAYLIST_IDENTIFIER_PREFIX)
     ) {
+      continue;
+    }
+
+    uniqueRefs.set(`${result.name}\u0000${result.identifier}`, {
+      name: result.name,
+      identifier: result.identifier,
+    });
+  }
+
+  for (const result of listenerResults) {
+    if (!result.name || !result.identifier?.startsWith(LISTENER_PLAYLIST_IDENTIFIER_PREFIX)) {
       continue;
     }
 
@@ -258,7 +304,10 @@ export async function loadPublicPlaylists(
         continue;
       }
 
-      const publicPlaylist = await buildPublicPlaylist(ref.name, ref.identifier, playlist);
+      const kind = ref.identifier.startsWith(LISTENER_PLAYLIST_IDENTIFIER_PREFIX)
+        ? 'listener'
+        : 'station';
+      const publicPlaylist = await buildPublicPlaylist(ref.name, ref.identifier, playlist, kind);
       playlists.push(publicPlaylist);
 
       if (publicPlaylist.versionStatus !== 'ready') {
@@ -296,15 +345,96 @@ export async function loadPublicPlaylists(
   };
 }
 
+async function loadPublicListenerPlaylistDetail(
+  listenerName: string,
+  playlistId: string,
+  stationPublisherName?: string,
+): Promise<PublicPlaylistDetailResult> {
+  if (!stationPublisherName) {
+    return {
+      status: 'not-found',
+      message: 'Station publisher information is required to resolve listener playlists.',
+    };
+  }
+
+  const listenerDetail = await loadListenerPlaylistDetail(
+    listenerName,
+    stationPublisherName,
+    playlistId,
+  );
+
+  if (listenerDetail.status === 'not-found') {
+    return {
+      status: 'not-found',
+      message: listenerDetail.message,
+    };
+  }
+
+  if (listenerDetail.status === 'version-missing') {
+    return {
+      status: 'version-missing',
+      message: listenerDetail.message,
+      publisherName: listenerName,
+    };
+  }
+
+  if (listenerDetail.status === 'version-malformed') {
+    return {
+      status: 'version-malformed',
+      message: listenerDetail.message,
+      publisherName: listenerName,
+    };
+  }
+
+  if (listenerDetail.status === 'tracks-unavailable') {
+    return {
+      status: 'tracks-unavailable',
+      message: listenerDetail.message,
+      playlist: listenerDetail.version ? undefined : undefined,
+      version: listenerDetail.version,
+      failedTrackIds: listenerDetail.failedTrackIds,
+      publisherName: listenerName,
+    };
+  }
+
+  if (listenerDetail.detail.playlist.visibility !== 'public') {
+    return {
+      status: 'private',
+      message: 'This playlist is private.',
+      playlist: listenerDetail.detail.playlist,
+      publisherName: listenerName,
+    };
+  }
+
+  return {
+    status: 'ready',
+    detail: {
+      playlist: listenerDetail.detail.playlist,
+      publisherName: listenerName,
+      version: listenerDetail.detail.version,
+      tracks: listenerDetail.detail.tracks.map((entry) => ({
+        track: entry.track,
+        coverUrl: entry.coverUrl,
+      })),
+    },
+  };
+}
+
 export async function loadPublicPlaylistDetail(
   publisherName: string,
   playlistId: string,
+  kind: 'station' | 'listener' = 'station',
+  stationPublisherName?: string,
 ): Promise<PublicPlaylistDetailResult> {
   if (!publisherName || !playlistId) {
     return {
       status: 'not-found',
-      message: 'A station publisher and playlist identifier are required.',
+      message: 'A publisher and playlist identifier are required.',
     };
+  }
+
+  if (kind === 'listener') {
+    return loadPublicListenerPlaylistDetail(publisherName, playlistId, stationPublisherName);
   }
 
   const qdnIdentifier = getPlaylistQdnIdentifier(playlistId);
@@ -351,7 +481,15 @@ export async function loadPublicPlaylistDetail(
 
   let version: PlaylistVersion;
   try {
-    version = await loadPlaylistVersionForPublisher(publisherName, playlist);
+    version = await loadPlaylistVersionForRef(
+      publisherName,
+      {
+        service: VERSION_SERVICE,
+        identifier: getPlaylistVersionQdnIdentifier(playlist.latestVersionId),
+      },
+      playlist.latestVersionId,
+      playlist.playlistId,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Playlist version unavailable.';
     return {

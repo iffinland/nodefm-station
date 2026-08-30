@@ -453,6 +453,7 @@ export async function duplicatePlaylistAction(
 export async function publishPlaylistVersion(
   input: PlaylistVersionInput,
   ownerName: string,
+  onProgress?: (chunk: 'version' | 'pointer') => void,
 ): Promise<
   | { ok: true; version: PlaylistVersion }
   | { ok: false; error: string; invalidTrackIds: string[] }
@@ -468,6 +469,7 @@ export async function publishPlaylistVersion(
 
   // 1. Publish the immutable version resource
   try {
+    onProgress?.('version');
     await persistPlaylistVersion(version, ownerName);
   } catch (error) {
     return {
@@ -497,6 +499,7 @@ export async function publishPlaylistVersion(
   };
 
   try {
+    onProgress?.('pointer');
     await persistPlaylist(updatedPlaylist, ownerName);
   } catch (error) {
     // Version published, playlist pointer update failed — partial state

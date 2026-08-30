@@ -369,7 +369,15 @@ export async function ensureQdnResourceReady(
 
   try {
     status = normalizeQdnStatus(await getQdnResourceStatus(ref));
-  } catch {
+  } catch (error) {
+    if (isConfirmedQdnNotFoundError(error)) {
+      throw new QdnResourceReadError(
+        'NOT_FOUND',
+        `QDN resource does not exist: ${ref.service}/${ref.name}/${ref.identifier ?? 'default'}`,
+        error,
+      );
+    }
+
     status = '';
   }
 
@@ -378,7 +386,8 @@ export async function ensureQdnResourceReady(
   }
 
   if (QDN_MISSING_STATUSES.has(status)) {
-    throw new Error(
+    throw new QdnResourceReadError(
+      'NOT_FOUND',
       `QDN resource does not exist: ${ref.service}/${ref.name}/${ref.identifier ?? 'default'}`,
     );
   }
@@ -394,7 +403,15 @@ export async function ensureQdnResourceReady(
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
       status = normalizeQdnStatus(await getQdnResourceStatus(ref));
-    } catch {
+    } catch (error) {
+      if (isConfirmedQdnNotFoundError(error)) {
+        throw new QdnResourceReadError(
+          'NOT_FOUND',
+          `QDN resource does not exist: ${ref.service}/${ref.name}/${ref.identifier ?? 'default'}`,
+          error,
+        );
+      }
+
       status = '';
     }
 
@@ -403,7 +420,8 @@ export async function ensureQdnResourceReady(
     }
 
     if (QDN_MISSING_STATUSES.has(status)) {
-      throw new Error(
+      throw new QdnResourceReadError(
+        'NOT_FOUND',
         `QDN resource does not exist: ${ref.service}/${ref.name}/${ref.identifier ?? 'default'}`,
       );
     }

@@ -124,7 +124,14 @@ export default function PlaylistsPage() {
                   <div className="public-playlist-card__actions">
                     <Link
                       className="button button--primary"
-                      to={`/playlists/${playlist.playlistId}`}
+                      to={
+                        playlist.kind === 'listener'
+                          ? {
+                              pathname: `/playlists/${playlist.playlistId}`,
+                              search: `?publisher=${encodeURIComponent(playlist.publisherName)}&kind=listener`,
+                            }
+                          : `/playlists/${playlist.playlistId}`
+                      }
                     >
                       Open
                     </Link>
@@ -135,6 +142,9 @@ export default function PlaylistsPage() {
                         setShareTarget({
                           kind: 'playlist',
                           playlistId: playlist.playlistId,
+                          publisherName:
+                            playlist.kind === 'listener' ? playlist.publisherName : undefined,
+                          playlistKind: playlist.kind,
                         })
                       }
                     >

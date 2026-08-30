@@ -21,6 +21,8 @@ export type ShareTargetInput =
   | {
       kind: 'playlist';
       playlistId: string;
+      publisherName?: string;
+      playlistKind?: 'station' | 'listener';
     };
 
 type ClipboardDependencies = {
@@ -43,6 +45,7 @@ export function buildAppShareTarget(host: QdnHostGlobals | null = null): string 
 export function buildPlaylistShareTarget(
   playlistId: string,
   host: QdnHostGlobals | null = null,
+  options: { publisherName?: string; playlistKind?: 'station' | 'listener' } = {},
 ): string {
   if (!playlistId.trim()) {
     throw new Error('Playlist ID is required to share a playlist.');
@@ -52,8 +55,19 @@ export function buildPlaylistShareTarget(
     host ?? (typeof window === 'undefined' ? null : (window as Window & QdnHostGlobals)),
   );
   const base = buildQdnUrl(appIdentity);
+  const query = new URLSearchParams();
 
-  return `${base}/playlists/${encodeURIComponent(playlistId.trim())}`;
+  if (options.publisherName) {
+    query.set('publisher', options.publisherName.trim());
+  }
+  if (options.playlistKind === 'listener') {
+    query.set('kind', 'listener');
+  }
+
+  const queryString = query.toString();
+  return `${base}/playlists/${encodeURIComponent(playlistId.trim())}${
+    queryString ? `?${queryString}` : ''
+  }`;
 }
 
 export function buildShareTarget(
@@ -64,7 +78,10 @@ export function buildShareTarget(
     return buildAppShareTarget(host);
   }
 
-  return buildPlaylistShareTarget(input.playlistId, host);
+  return buildPlaylistShareTarget(input.playlistId, host, {
+    publisherName: input.publisherName,
+    playlistKind: input.playlistKind,
+  });
 }
 
 function copyWithTextarea(text: string, documentRef: ClipboardDependencies['document']): boolean {

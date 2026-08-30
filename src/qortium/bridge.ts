@@ -17,6 +17,8 @@
 
 // ── Types ───────────────────────────────────────────────────────────
 
+import { beginStartupRequest } from '../services/perf/startupDiagnostics';
+
 type PropertyRead =
   { status: 'AVAILABLE'; value: unknown } | { status: 'UNAVAILABLE' | 'INACCESSIBLE' };
 
@@ -345,9 +347,20 @@ function toRequestError(value: unknown, action: string): Error {
 export async function sendBridgeRequest<T = unknown>(request: Record<string, unknown>): Promise<T> {
   const action = typeof request.action === 'string' ? request.action : 'UNKNOWN_ACTION';
   const maxAttempts = READ_ACTIONS.has(action) ? READ_RETRY_COUNT + 1 : 1;
+  const service = typeof request.service === 'string' ? request.service : undefined;
+  const nameFilter = typeof request.name === 'string' ? request.name : undefined;
+  const identifier = typeof request.identifier === 'string' ? request.identifier : undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const resolution = await waitForBridge();
+    const endRequest = beginStartupRequest({
+      caller: 'bridge',
+      action,
+      service,
+      nameFilter,
+      identifier,
+      retry: attempt,
+    });
 
     let didTimeout = false;
 
@@ -381,8 +394,19 @@ export async function sendBridgeRequest<T = unknown>(request: Record<string, unk
         throw new Error(requestError);
       }
 
+      endRequest('success', {
+        resultCount: Array.isArray(response) ? response.length : undefined,
+      });
       return response as T;
     } catch (error) {
+      const completion =
+        error instanceof QortiumBridgeError && error.code === 'REQUEST_TIMEOUT'
+          ? 'timeout'
+          : 'error';
+      endRequest(completion, {
+        detail: error instanceof Error ? error.message : undefined,
+      });
+
       if (error instanceof QortiumBridgeError && error.code === 'REQUEST_TIMEOUT') {
         throw error;
       }

@@ -9,6 +9,7 @@ import type { DynamicProgramOccurrence, ScheduleEvent, Station } from '../../../
 import type {
   LiveState,
   PlaybackSourceTimeline,
+  PlaybackTrackOrderResult,
   TimelineFailure,
   TimelineInput,
   TimelineResult,
@@ -537,6 +538,64 @@ export function resolveLiveState(nowUtcMs: number, input: TimelineInput): Timeli
 
   const source = resolveActiveSource(nowUtcMs, input);
   return source.status === 'error' ? source.failure : buildLiveState(source.source, nowUtcMs);
+}
+
+/**
+ * Expose the deterministic playback order for the currently active source
+ * without mutating the canonical timeline. Playback fallback uses this to
+ * advance forward from the current track; timeline offsets remain unchanged.
+ */
+export function resolvePlaybackTrackOrder(
+  nowUtcMs: number,
+  input: TimelineInput,
+): PlaybackTrackOrderResult {
+  if (!Number.isFinite(nowUtcMs) || !Number.isInteger(nowUtcMs)) {
+    return {
+      status: 'error',
+      code: 'malformed-station-config',
+      message: 'nowUtcMs must be a finite integer UTC timestamp.',
+    };
+  }
+
+  const sourceResolution = resolveActiveSource(nowUtcMs, input);
+  if (sourceResolution.status === 'error') {
+    return sourceResolution.failure;
+  }
+
+  const source = sourceResolution.source;
+  const totalDurationMs = getPlaylistDurationMs(source.tracks);
+
+  if (!Number.isFinite(totalDurationMs) || totalDurationMs <= 0) {
+    return {
+      status: 'error',
+      code: 'invalid-playlist-version',
+      message: 'Playback source has no valid playable duration.',
+    };
+  }
+
+  const elapsedWithinSourceMs = nowUtcMs - source.sourceStartUtcMs;
+  const currentLoopIndex = Math.floor(elapsedWithinSourceMs / totalDurationMs);
+  const positionMs = floorMod(elapsedWithinSourceMs, totalDurationMs);
+  const located = locateTrackAtPosition(source.tracks, positionMs);
+
+  if (!located) {
+    return {
+      status: 'error',
+      code: 'invalid-playlist-version',
+      message: 'Unable to locate a playable track in the playback source.',
+    };
+  }
+
+  return {
+    status: 'ready',
+    order: {
+      source,
+      tracks: source.tracks,
+      currentIndex: located.trackIndex,
+      currentLoopIndex,
+      totalDurationMs,
+    },
+  };
 }
 
 export function getCurrentScheduleEvent(

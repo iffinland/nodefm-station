@@ -1037,6 +1037,36 @@ select {
   font-style: italic;
 }
 
+.live-radio-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--nf-border);
+  border-radius: var(--nf-radius-sm);
+  background: rgba(126, 186, 255, 0.05);
+  color: var(--nf-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.live-radio-loading__spinner {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  border: 2px solid rgba(53, 220, 255, 0.25);
+  border-top-color: var(--nf-cyan);
+  border-radius: 50%;
+  animation: live-radio-loading-spin 0.8s linear infinite;
+}
+
+@keyframes live-radio-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .admin-messages__hint {
   color: rgba(230, 230, 230, 0.65);
   line-height: 1.6;
@@ -4044,6 +4074,203 @@ select {
   border-color: var(--nf-cyan);
   outline: none;
   box-shadow: 0 0 0 3px rgba(53, 220, 255, 0.14);
+}
+
+/* Listener-owned playlists */
+.my-playlists {
+  display: grid;
+  gap: 1rem;
+}
+
+.my-playlists__toolbar,
+.my-playlists__list,
+.my-playlist-card,
+.my-playlist-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.my-playlists__toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.my-playlists__list {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.my-playlist-card {
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.my-playlist-card__info {
+  min-width: 0;
+}
+
+.my-playlist-card__info h3,
+.my-playlist-card__info p {
+  margin: 0 0 0.35rem;
+}
+
+.my-playlist-card__meta,
+.my-playlist-card__updated {
+  display: inline-block;
+  margin-right: 0.75rem;
+  color: var(--nf-text-muted);
+  font-size: 0.82rem;
+}
+
+.my-playlist-card__state {
+  display: inline-block;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.my-playlist-card__state--draft {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--nf-text-muted);
+}
+
+.my-playlist-card__state--published {
+  background: rgba(53, 220, 255, 0.12);
+  color: var(--nf-cyan);
+}
+
+.listener-playlist-detail {
+  display: grid;
+  gap: 1rem;
+}
+
+.listener-playlist-detail__header,
+.listener-playlist-detail__info {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.listener-playlist-detail__meta,
+.listener-playlist-detail__owner,
+.listener-playlist-detail__warning {
+  color: var(--nf-text-muted);
+  font-size: 0.88rem;
+}
+
+.listener-playlist-detail__warning {
+  color: #ffc966;
+}
+
+.listener-playlist-entry-status {
+  margin-left: 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.listener-playlist-entry-status--awaiting {
+  color: #ffc966;
+}
+
+.listener-playlist-entry-status--rejected {
+  color: #ff6b6b;
+}
+
+.listener-playlist-entry-status--ready {
+  color: #5eead4;
+}
+
+.playlist-editor__library-checkbox {
+  display: inline-flex;
+  align-items: center;
+}
+
+.playlist-editor__library-item-added {
+  color: var(--nf-text-muted);
+  font-size: 0.72rem;
+}
+
+.playlist-editor__published-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--nf-border);
+}
+
+.qdn-transaction {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.qdn-transaction__chunks {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qdn-transaction__chunk {
+  display: grid;
+  grid-template-columns: 1.2rem 1fr;
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--nf-border);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.qdn-transaction__chunk-icon {
+  grid-row: 1;
+  font-weight: 700;
+  color: var(--nf-text-muted);
+}
+
+.qdn-transaction__chunk--active .qdn-transaction__chunk-icon {
+  color: var(--nf-cyan);
+}
+
+.qdn-transaction__chunk--succeeded .qdn-transaction__chunk-icon {
+  color: #5eead4;
+}
+
+.qdn-transaction__chunk--failed .qdn-transaction__chunk-icon {
+  color: #ff6b6b;
+}
+
+.qdn-transaction__chunk-label {
+  grid-row: 1;
+  font-weight: 650;
+}
+
+.qdn-transaction__chunk-detail {
+  grid-column: 2;
+  color: var(--nf-text-muted);
+  font-size: 0.82rem;
+}
+
+.qdn-transaction__chunk-error {
+  grid-column: 2;
+  color: #ff6b6b;
+  font-size: 0.82rem;
+}
+
+.qdn-transaction__partial {
+  color: #ffc966;
+  font-size: 0.9rem;
 }
 
 @media (prefers-reduced-motion: reduce) {

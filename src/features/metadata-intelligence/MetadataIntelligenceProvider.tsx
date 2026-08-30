@@ -20,7 +20,7 @@ import {
 } from './metadataIntelligenceContext';
 
 export function MetadataIntelligenceProvider({ children }: { children: ReactNode }) {
-  const { tracks } = useLibrary();
+  const { tracks } = useLibrary({ loadOnMount: false });
 
   const index = useMemo(() => buildMetadataIndex(tracks), [tracks]);
   const artists = useMemo(() => getArtistDisplayValues(index), [index]);

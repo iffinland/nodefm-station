@@ -20,6 +20,9 @@ import { LoadingState } from '../components/LoadingState';
 const RadioPage = lazy(() => import('../pages/RadioPage'));
 const PlaylistsPage = lazy(() => import('../pages/PlaylistsPage'));
 const PlaylistDetailPage = lazy(() => import('../pages/PlaylistDetailPage'));
+const MyPlaylistsPage = lazy(() => import('../pages/MyPlaylistsPage'));
+const ListenerPlaylistEditorPage = lazy(() => import('../pages/ListenerPlaylistEditorPage'));
+const ListenerPlaylistDetailPage = lazy(() => import('../pages/ListenerPlaylistDetailPage'));
 const SubmitMusicPage = lazy(() => import('../pages/SubmitMusicPage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 
@@ -29,6 +32,9 @@ const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard'));
 const LibraryPage = lazy(() => import('../pages/admin/LibraryPage'));
 const PlaylistsAdminPage = lazy(() => import('../pages/admin/PlaylistsAdminPage'));
 const PlaylistEditorPage = lazy(() => import('../pages/admin/PlaylistEditorPage'));
+const AdminPlaylistSubmissionsPage = lazy(
+  () => import('../pages/admin/AdminPlaylistSubmissionsPage'),
+);
 const SchedulePage = lazy(() => import('../pages/admin/SchedulePage'));
 const MessagesPage = lazy(() => import('../pages/admin/MessagesPage'));
 const StationSettingsPage = lazy(() => import('../pages/admin/StationSettingsPage'));
@@ -70,6 +76,10 @@ export function AppRouter() {
             <Route index element={<RadioPage />} />
             <Route path="playlists" element={<PlaylistsPage />} />
             <Route path="playlists/:playlistId" element={<PlaylistDetailPage />} />
+            <Route path="my-playlists" element={<MyPlaylistsPage />} />
+            <Route path="my-playlists/new" element={<ListenerPlaylistEditorPage />} />
+            <Route path="my-playlists/:playlistId/play" element={<ListenerPlaylistDetailPage />} />
+            <Route path="my-playlists/:playlistId" element={<ListenerPlaylistEditorPage />} />
             <Route path="submit-music" element={<SubmitMusicPage />} />
             <Route path="about" element={<AboutPage />} />
           </Route>
@@ -87,6 +97,7 @@ export function AppRouter() {
             <Route path="library" element={<LibraryPage />} />
             <Route path="playlists" element={<PlaylistsAdminPage />} />
             <Route path="playlists/:playlistId" element={<PlaylistEditorPage />} />
+            <Route path="playlist-submissions" element={<AdminPlaylistSubmissionsPage />} />
             <Route path="schedule" element={<SchedulePage />} />
             <Route path="messages" element={<MessagesPage />} />
             <Route path="station" element={<StationSettingsPage />} />

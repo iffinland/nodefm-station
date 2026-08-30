@@ -9,6 +9,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import { UtcTimeInput } from '../../../components/UtcTimeInput';
+import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../../components/qdnTransactionFlow';
 import { useStation, useStationIdentity } from '../../station';
 import { usePlaylists } from '../../../hooks/usePlaylists';
 import { useLibrary } from '../../../hooks/useLibrary';
@@ -106,6 +112,7 @@ export function ScheduleEventEditorModal({
   const [materializationRecoveryEventId, setMaterializationRecoveryEventId] = useState<
     string | null
   >(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
 
   const eligibleTracks = useMemo(
     () => libraryTracks.filter((track) => isValidDurationMs(track.durationMs)),
@@ -301,17 +308,48 @@ export function ScheduleEventEditorModal({
   };
 
   const handleDelete = async () => {
-    if (!event || !window.confirm('Delete this scheduled program?')) {
-      return;
-    }
+    if (!event) return;
+
+    setTransaction(
+      createQdnTransactionState([{ id: 'delete', label: 'Delete this scheduled program' }], {
+        retryable: true,
+      }),
+    );
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'delete') : current,
+    );
 
     try {
       setSaving(true);
       setError(null);
       await deleteEvent(event.eventId);
-      onClose();
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+              phase: 'success' as const,
+              successMessage: 'Program deleted.',
+              retryable: false,
+            }
+          : current,
+      );
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to delete schedule event.');
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error:
+                saveError instanceof Error ? saveError.message : 'Failed to delete schedule event.',
+              retryable: true,
+            }
+          : current,
+      );
     } finally {
       setSaving(false);
     }
@@ -319,171 +357,187 @@ export function ScheduleEventEditorModal({
 
   return (
     <Modal title={mode === 'create' ? 'Schedule Program' : 'Edit Program'} onClose={onClose}>
-      <div className="schedule-editor">
-        <label className="form-field">
-          Program title
-          <input
-            type="text"
-            value={title}
-            onChange={(changeEvent) => setTitle(changeEvent.target.value)}
-            placeholder="Evening Rock"
-          />
-        </label>
-
-        <label className="form-field">
-          Source type
-          <select
-            value={sourceType}
-            onChange={(changeEvent) =>
-              setSourceType(changeEvent.target.value as 'playlist' | 'dynamic-program')
-            }
-          >
-            <option value="playlist">Immutable playlist</option>
-            <option value="dynamic-program">Request Show</option>
-          </select>
-        </label>
-
-        <label className="form-field">
-          Date ({timeZone || 'station timezone'})
-          <input
-            type="date"
-            value={date}
-            onChange={(changeEvent) => setDate(changeEvent.target.value)}
-          />
-        </label>
-
-        <div className="schedule-editor__time-row">
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Delete Program"
+          state={transaction}
+          standalone={false}
+          onClose={() => {
+            setTransaction(null);
+            if (transaction.phase === 'success') onClose();
+          }}
+          onRetry={() => void handleDelete()}
+        />
+      ) : (
+        <div className="schedule-editor">
           <label className="form-field">
-            Start time ({timeZone || 'station timezone'})
-            <UtcTimeInput
-              value={startTime}
-              onChange={setStartTime}
-              suffix={timeZone || 'station timezone'}
+            Program title
+            <input
+              type="text"
+              value={title}
+              onChange={(changeEvent) => setTitle(changeEvent.target.value)}
+              placeholder="Evening Rock"
             />
           </label>
-          <label className="form-field">
-            End time ({timeZone || 'station timezone'})
-            <UtcTimeInput
-              value={endTime}
-              onChange={setEndTime}
-              suffix={timeZone || 'station timezone'}
-            />
-          </label>
-        </div>
 
-        {sourceType === 'playlist' ? (
-          <>
-            <label className="form-field">
-              Playlist
-              <select
-                value={playlistId}
-                onChange={(changeEvent) => {
-                  setPlaylistId(changeEvent.target.value);
-                  setVersionId('');
-                }}
-              >
-                <option value="">Select a playlist</option>
-                {playlists.map((playlist) => (
-                  <option key={playlist.playlistId} value={playlist.playlistId}>
-                    {playlist.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="form-field">
-              Immutable playlist version
-              <select
-                value={versionId}
-                onChange={(changeEvent) => setVersionId(changeEvent.target.value)}
-                disabled={!playlistId}
-              >
-                <option value="">Select a published version</option>
-                {versions.map((version) => (
-                  <option key={version.versionId} value={version.versionId}>
-                    v{version.versionNumber} — {version.tracks.length} tracks
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        ) : (
           <label className="form-field">
-            Request Show definition
+            Source type
             <select
-              value={programDefinitionId}
-              onChange={(changeEvent) => setProgramDefinitionId(changeEvent.target.value)}
+              value={sourceType}
+              onChange={(changeEvent) =>
+                setSourceType(changeEvent.target.value as 'playlist' | 'dynamic-program')
+              }
             >
-              <option value="">Select a Request Show definition</option>
-              {definitions.map((definition) => (
-                <option key={definition.programDefinitionId} value={definition.programDefinitionId}>
-                  {definition.title}
-                </option>
-              ))}
+              <option value="playlist">Immutable playlist</option>
+              <option value="dynamic-program">Request Show</option>
             </select>
           </label>
-        )}
 
-        {error && <p className="form-error">{error}</p>}
+          <label className="form-field">
+            Date ({timeZone || 'station timezone'})
+            <input
+              type="date"
+              value={date}
+              onChange={(changeEvent) => setDate(changeEvent.target.value)}
+            />
+          </label>
 
-        {materializationRecoveryEventId ? (
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={handleRetryMaterialization}
-            disabled={saving}
-          >
-            Retry Request Show lineup
-          </button>
-        ) : null}
+          <div className="schedule-editor__time-row">
+            <label className="form-field">
+              Start time ({timeZone || 'station timezone'})
+              <UtcTimeInput
+                value={startTime}
+                onChange={setStartTime}
+                suffix={timeZone || 'station timezone'}
+              />
+            </label>
+            <label className="form-field">
+              End time ({timeZone || 'station timezone'})
+              <UtcTimeInput
+                value={endTime}
+                onChange={setEndTime}
+                suffix={timeZone || 'station timezone'}
+              />
+            </label>
+          </div>
 
-        <div className="form-actions">
-          {mode === 'edit' && event && (
+          {sourceType === 'playlist' ? (
+            <>
+              <label className="form-field">
+                Playlist
+                <select
+                  value={playlistId}
+                  onChange={(changeEvent) => {
+                    setPlaylistId(changeEvent.target.value);
+                    setVersionId('');
+                  }}
+                >
+                  <option value="">Select a playlist</option>
+                  {playlists.map((playlist) => (
+                    <option key={playlist.playlistId} value={playlist.playlistId}>
+                      {playlist.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-field">
+                Immutable playlist version
+                <select
+                  value={versionId}
+                  onChange={(changeEvent) => setVersionId(changeEvent.target.value)}
+                  disabled={!playlistId}
+                >
+                  <option value="">Select a published version</option>
+                  {versions.map((version) => (
+                    <option key={version.versionId} value={version.versionId}>
+                      v{version.versionNumber} — {version.tracks.length} tracks
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <label className="form-field">
+              Request Show definition
+              <select
+                value={programDefinitionId}
+                onChange={(changeEvent) => setProgramDefinitionId(changeEvent.target.value)}
+              >
+                <option value="">Select a Request Show definition</option>
+                {definitions.map((definition) => (
+                  <option
+                    key={definition.programDefinitionId}
+                    value={definition.programDefinitionId}
+                  >
+                    {definition.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {error && <p className="form-error">{error}</p>}
+
+          {materializationRecoveryEventId ? (
             <button
               className="button button--secondary"
               type="button"
-              onClick={handleDelete}
+              onClick={handleRetryMaterialization}
               disabled={saving}
             >
-              Delete
+              Retry Request Show lineup
             </button>
-          )}
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-          >
-            Cancel
-          </button>
-          <button
-            className="button button--primary"
-            type="button"
-            onClick={handleSave}
-            disabled={
-              saving ||
-              !timeZone ||
-              (sourceType === 'playlist' && (!playlistId || !versionId)) ||
-              (sourceType === 'dynamic-program' &&
-                (!programDefinitionId || !libraryLoaded || !requestShowLoaded || !likesReady))
-            }
-          >
-            {saving
-              ? 'Saving…'
-              : mode === 'create'
-                ? sourceType === 'dynamic-program'
-                  ? 'Schedule & Generate'
-                  : 'Schedule Program'
-                : 'Save Changes'}
-          </button>
+          ) : null}
+
+          <div className="form-actions">
+            {mode === 'edit' && event && (
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={handleDelete}
+                disabled={saving}
+              >
+                Delete
+              </button>
+            )}
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handleSave}
+              disabled={
+                saving ||
+                !timeZone ||
+                (sourceType === 'playlist' && (!playlistId || !versionId)) ||
+                (sourceType === 'dynamic-program' &&
+                  (!programDefinitionId || !libraryLoaded || !requestShowLoaded || !likesReady))
+              }
+            >
+              {saving
+                ? 'Saving…'
+                : mode === 'create'
+                  ? sourceType === 'dynamic-program'
+                    ? 'Schedule & Generate'
+                    : 'Schedule Program'
+                  : 'Save Changes'}
+            </button>
+          </div>
+          {sourceType === 'dynamic-program' &&
+          (libraryLoading || requestShowLoading || likesLoading || likesIncomplete) ? (
+            <p className="schedule-editor__unsupported">
+              Waiting for station library and Like records before generating the lineup…
+            </p>
+          ) : null}
         </div>
-        {sourceType === 'dynamic-program' &&
-        (libraryLoading || requestShowLoading || likesLoading || likesIncomplete) ? (
-          <p className="schedule-editor__unsupported">
-            Waiting for station library and Like records before generating the lineup…
-          </p>
-        ) : null}
-      </div>
+      )}
     </Modal>
   );
 }
