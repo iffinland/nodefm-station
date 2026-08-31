@@ -9,11 +9,17 @@
 import { useMemo, useState } from 'react';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
+import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
+import {
+  createQdnTransactionState,
+  markQdnTransactionChunkActive,
+  type QdnTransactionState,
+} from '../../../components/qdnTransactionFlow';
 import { useStationIdentity } from '../../station';
 import { useLibrary } from '../../../hooks/useLibrary';
 import { useLikes } from '../../likes/useLikes';
 import { useRequestShow } from './useRequestShow';
-import { materializeRequestShowOccurrenceAction } from './requestShowStore';
+import { materializeRequestShowOccurrenceBatchForDefinitions } from './requestShowStore';
 import type { ScheduleEvent, Track } from '../../../types/domain';
 import { isValidDurationMs } from '../../../utils/duration';
 import { formatUtcDateTime } from '../../../utils/utcTime';
@@ -62,6 +68,7 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
 
   const eligibleTracks = useMemo(
     () => libraryTracks.filter((track) => isValidDurationMs(track.durationMs)),
@@ -155,51 +162,105 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
     setSaving(true);
     setFormError(null);
     setStatusMessage(null);
+    setTransaction(
+      createQdnTransactionState(
+        [{ id: 'occurrences', label: 'Publish missing Request Show lineups' }],
+        { retryable: true },
+      ),
+    );
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'occurrences') : current,
+    );
 
     try {
       const ranked = rankFromAggregates(eligibleTracks, aggregates);
-      const failures: string[] = [];
-      let generated = 0;
+      const entries: Array<{
+        scheduleEvent: ScheduleEvent;
+        definition: (typeof definitions)[number];
+      }> = [];
+      const missingDefinitionFailures: string[] = [];
 
       for (const event of missingOccurrences) {
-        if (event.source.type !== 'dynamic-program') {
-          continue;
-        }
-
-        const programDefinitionId = event.source.programDefinitionId;
+        const source = event.source;
+        if (source.type !== 'dynamic-program') continue;
         const definition = definitions.find(
-          (candidate) => candidate.programDefinitionId === programDefinitionId,
+          (candidate) => candidate.programDefinitionId === source.programDefinitionId,
         );
-
         if (!definition) {
-          failures.push(`${event.eventId}: missing Request Show definition`);
+          missingDefinitionFailures.push(`${event.eventId}: missing Request Show definition`);
           continue;
         }
-
-        try {
-          await materializeRequestShowOccurrenceAction(
-            event,
-            definition,
-            eligibleTracks,
-            ranked,
-            new Date().toISOString(),
-            publisherName,
-          );
-          generated += 1;
-        } catch (materializeError) {
-          failures.push(
-            `${event.eventId}: ${
-              materializeError instanceof Error ? materializeError.message : 'unknown error'
-            }`,
-          );
-        }
+        entries.push({ scheduleEvent: event, definition });
       }
+
+      const result = await materializeRequestShowOccurrenceBatchForDefinitions(
+        entries,
+        eligibleTracks,
+        ranked,
+        new Date().toISOString(),
+        publisherName,
+      );
+
+      const failures = [
+        ...missingDefinitionFailures,
+        ...result.failedScheduleEventIds.map((eventId) => `${eventId}: lineup publication failed`),
+      ];
 
       if (failures.length > 0) {
-        setFormError(`Materialized ${generated} occurrence(s). ${failures.join(' | ')}`);
+        setTransaction((current) =>
+          current
+            ? {
+                ...current,
+                chunks: current.chunks.map((item) =>
+                  result.status === 'all-published' && missingDefinitionFailures.length === 0
+                    ? { ...item, status: 'succeeded' as const }
+                    : { ...item, status: 'failed' as const },
+                ),
+                phase: 'partial' as const,
+                error: failures.join(' | '),
+                retryable: true,
+              }
+            : current,
+        );
+        setFormError(
+          `Materialized ${result.publishedOccurrences.length} occurrence(s). ${failures.join(' | ')}`,
+        );
       } else {
-        setStatusMessage(`Materialized ${generated} missing occurrence(s).`);
+        setTransaction((current) =>
+          current
+            ? {
+                ...current,
+                chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+                phase: 'success' as const,
+                successMessage: `Materialized ${result.publishedOccurrences.length} missing occurrence(s).`,
+                retryable: false,
+              }
+            : current,
+        );
+        setStatusMessage(
+          `Materialized ${result.publishedOccurrences.length} missing occurrence(s).`,
+        );
       }
+    } catch (materializeError) {
+      setTransaction((current) =>
+        current
+          ? {
+              ...current,
+              chunks: current.chunks.map((item) =>
+                item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+              ),
+              phase: 'failed' as const,
+              error:
+                materializeError instanceof Error
+                  ? materializeError.message
+                  : 'Materialization failed.',
+              retryable: true,
+            }
+          : current,
+      );
+      setFormError(
+        materializeError instanceof Error ? materializeError.message : 'Materialization failed.',
+      );
     } finally {
       setSaving(false);
     }
@@ -351,6 +412,18 @@ export function RequestShowAdminPanel({ events }: RequestShowAdminPanelProps) {
           </ul>
         )}
       </div>
+      {transaction ? (
+        <QdnTransactionFlow
+          title="Request Show Materialization"
+          state={transaction}
+          standalone={false}
+          onClose={() => setTransaction(null)}
+          onRetry={() => {
+            setTransaction(null);
+            void handleMaterializeMissing();
+          }}
+        />
+      ) : null}
     </section>
   );
 }

@@ -11,16 +11,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../../app/providers/authContext';
 import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
-import { QdnTransactionFlow } from '../../../components/QdnTransactionFlow';
 import {
-  createQdnTransactionState,
-  markQdnTransactionChunkActive,
-  type QdnTransactionState,
-} from '../../../components/qdnTransactionFlow';
+  PublicationProgress,
+  type PublicationProgressState,
+} from '../../../components/PublicationProgress';
 import { selectPublishSource, type SelectPublishSourceResult } from '../../../qortium/qdn';
 import { generateId } from '../../../utils/id';
-import type { ListenerTrackSubmission, QdnResourceRef } from '../../../types/domain';
-import { publishListenerSubmission, publishSubmissionMetadata } from '../services/submissionStore';
+import type { ListenerTrackSubmission } from '../../../types/domain';
+import { publishListenerSubmission } from '../services/submissionStore';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
 import {
   AlbumInput,
@@ -32,10 +30,7 @@ import {
 
 const COVER_INLINE_MAX_BYTES = 2 * 1024 * 1024;
 
-type Step = 'form' | 'publishing' | 'done' | 'partial' | 'error';
-
 type FormState = {
-  step: Step;
   audioSource: Exclude<SelectPublishSourceResult, { canceled: true }> | null;
   title: string;
   artist: string;
@@ -46,16 +41,11 @@ type FormState = {
   tags: string;
   coverFile: File | null;
   coverBase64: string | null;
-  audioRef: QdnResourceRef | null;
-  coverRef: QdnResourceRef | null;
-  submissionDraft: ListenerTrackSubmission | null;
-  partialReason: string | null;
   error: string | null;
 };
 
 function initialFormState(overrides: Partial<FormState> = {}): FormState {
   return {
-    step: 'form',
     audioSource: null,
     title: '',
     artist: '',
@@ -66,10 +56,6 @@ function initialFormState(overrides: Partial<FormState> = {}): FormState {
     tags: '',
     coverFile: null,
     coverBase64: null,
-    audioRef: null,
-    coverRef: null,
-    submissionDraft: null,
-    partialReason: null,
     error: null,
     ...overrides,
   };
@@ -86,7 +72,7 @@ export function SubmitMusicForm({
   const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
   const submissionIdRef = useRef(generateId());
   const [state, setState] = useState<FormState>(initialFormState);
-  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
+  const [publication, setPublication] = useState<PublicationProgressState | null>(null);
 
   const submitterName = auth.status === 'authenticated' ? auth.name?.trim() || null : null;
   const submitterAddress = auth.status === 'authenticated' ? auth.address : null;
@@ -98,7 +84,7 @@ export function SubmitMusicForm({
   const resetForNewSubmission = useCallback(() => {
     submissionIdRef.current = generateId();
     setState(initialFormState());
-    setTransaction(null);
+    setPublication(null);
   }, []);
 
   useEffect(() => {
@@ -200,18 +186,16 @@ export function SubmitMusicForm({
       return;
     }
 
-    setState((current) => ({ ...current, step: 'publishing', error: null }));
-    const specs = [
-      { id: 'audio', label: 'Publish listener-owned audio' },
-      ...(state.coverFile && state.coverBase64
-        ? [{ id: 'cover', label: 'Publish optional cover image' }]
+    setState((current) => ({ ...current, error: null }));
+    const hasCover = Boolean(state.coverFile && state.coverBase64);
+    const rows: PublicationProgressState['rows'] = [
+      { id: 'audio', label: 'Audio file', status: 'active' },
+      ...(hasCover
+        ? [{ id: 'cover' as const, label: 'Cover image', status: 'active' as const }]
         : []),
-      { id: 'metadata', label: 'Resolve duration and publish submission metadata' },
+      { id: 'track', label: 'Track metadata', status: 'waiting' },
     ];
-    setTransaction(createQdnTransactionState(specs, { retryable: true }));
-    setTransaction((current) =>
-      current ? markQdnTransactionChunkActive(current, 'audio') : current,
-    );
+    setPublication({ phase: 'publishing', rows });
 
     const genres = state.genres.trim()
       ? getCanonicalTaxonomyValues(state.genres, genreSuggestions)
@@ -249,72 +233,59 @@ export function SubmitMusicForm({
       remember('genres', genres ?? []);
       remember('tags', tags ?? []);
       onPublished?.(result.submission);
-      setTransaction((current) =>
+      setPublication((current) =>
         current
           ? {
-              ...current,
-              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
               phase: 'success' as const,
-              successMessage: 'Upload complete — Added to My Uploads.',
-              retryable: false,
+              rows: current.rows.map((row) => ({
+                ...row,
+                status: 'succeeded' as const,
+                error: undefined,
+              })),
+              error: undefined,
             }
           : current,
       );
-      setState((current) => ({
-        ...current,
-        step: 'done',
-        error: null,
-        audioRef: null,
-        coverRef: null,
-        submissionDraft: null,
-      }));
       return;
     }
 
     if (result.status === 'partial') {
-      setTransaction((current) =>
+      setPublication((current) =>
         current
           ? {
-              ...current,
-              chunks: current.chunks.map((item) =>
-                item.id === 'audio'
-                  ? { ...item, status: 'succeeded' as const }
-                  : item.id === 'cover'
-                    ? {
-                        ...item,
-                        status: result.cover ? ('succeeded' as const) : ('skipped' as const),
-                      }
-                    : { ...item, status: 'failed' as const },
-              ),
-              phase: 'partial' as const,
+              phase: 'failed' as const,
+              rows: current.rows.map((row) => {
+                if (row.id === 'audio') {
+                  return { ...row, status: 'succeeded' as const, error: undefined };
+                }
+                if (row.id === 'cover') {
+                  return result.cover
+                    ? { ...row, status: 'succeeded' as const, error: undefined }
+                    : { ...row, status: 'failed' as const };
+                }
+                return { ...row, status: 'failed' as const, error: result.reason };
+              }),
               error: result.reason,
-              retryable: true,
             }
           : current,
       );
-      setState((current) => ({
-        ...current,
-        step: 'partial',
-        audioRef: result.audio,
-        coverRef: result.cover ?? null,
-        submissionDraft: result.submissionDraft ?? null,
-        partialReason: result.reason,
-        error: null,
-      }));
       return;
     }
 
-    setState((current) => ({ ...current, step: 'error', error: result.reason }));
-    setTransaction((current) =>
+    setPublication((current) =>
       current
         ? {
-            ...current,
-            chunks: current.chunks.map((item) =>
-              item.status === 'active' ? { ...item, status: 'failed' as const } : item,
-            ),
             phase: 'failed' as const,
+            rows: current.rows.map((row) => {
+              if (row.id === 'audio') {
+                return { ...row, status: 'failed' as const, error: result.reason };
+              }
+              if (row.id === 'cover') {
+                return { ...row, status: 'failed' as const };
+              }
+              return row;
+            }),
             error: result.reason,
-            retryable: true,
           }
         : current,
     );
@@ -336,68 +307,6 @@ export function SubmitMusicForm({
     tagSuggestions,
     remember,
   ]);
-
-  const handleRetryMetadata = useCallback(async () => {
-    if (!state.submissionDraft || !submitterName) {
-      return;
-    }
-
-    setState((current) => ({ ...current, step: 'publishing', error: null }));
-    setTransaction((current) =>
-      current
-        ? markQdnTransactionChunkActive(current, 'metadata')
-        : createQdnTransactionState(
-            [
-              { id: 'audio', label: 'Publish listener-owned audio' },
-              { id: 'metadata', label: 'Resolve duration and publish submission metadata' },
-            ],
-            { retryable: true },
-          ),
-    );
-
-    try {
-      await publishSubmissionMetadata(state.submissionDraft, submitterName);
-      setTransaction((current) =>
-        current
-          ? {
-              ...current,
-              chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
-              phase: 'success' as const,
-              successMessage: 'Upload complete — Added to My Uploads.',
-              retryable: false,
-            }
-          : current,
-      );
-      setState((current) => ({
-        ...current,
-        step: 'done',
-        audioRef: null,
-        coverRef: null,
-        submissionDraft: null,
-        error: null,
-      }));
-    } catch (metadataError) {
-      setState((current) => ({
-        ...current,
-        step: 'partial',
-        error: metadataError instanceof Error ? metadataError.message : 'Metadata retry failed.',
-      }));
-      setTransaction((current) =>
-        current
-          ? {
-              ...current,
-              chunks: current.chunks.map((item) =>
-                item.id === 'metadata' ? { ...item, status: 'failed' as const } : item,
-              ),
-              phase: 'partial' as const,
-              error:
-                metadataError instanceof Error ? metadataError.message : 'Metadata retry failed.',
-              retryable: true,
-            }
-          : current,
-      );
-    }
-  }, [state.submissionDraft, submitterName]);
 
   if (auth.status === 'loading') {
     return <LoadingState message="Checking Qortium identity…" />;
@@ -421,48 +330,17 @@ export function SubmitMusicForm({
     );
   }
 
-  if (
-    state.step === 'publishing' ||
-    state.step === 'done' ||
-    state.step === 'partial' ||
-    state.step === 'error'
-  ) {
-    const title =
-      state.step === 'partial'
-        ? 'Submission is incomplete'
-        : state.step === 'error'
-          ? 'Submission failed'
-          : 'Submit Music';
+  if (publication) {
+    const title = publication.phase === 'success' ? 'Track Published' : 'Publishing Track';
 
     return (
-      <QdnTransactionFlow
+      <PublicationProgress
         title={title}
-        state={
-          transaction ??
-          createQdnTransactionState(
-            state.step === 'error'
-              ? [{ id: 'submission', label: 'Publish music submission' }]
-              : [{ id: 'submission', label: 'Publish music submission' }],
-            { retryable: true },
-          )
-        }
+        state={publication}
+        successMessage="Track published successfully."
+        onClose={resetForNewSubmission}
+        onSuccess={resetForNewSubmission}
         standalone={!embedded}
-        onClose={() => {
-          if (state.step === 'done' || state.step === 'error') {
-            resetForNewSubmission();
-          } else {
-            setState((current) => ({ ...current, step: 'form', error: null }));
-            setTransaction(null);
-          }
-        }}
-        onRetry={() => {
-          if (state.step === 'partial' && state.submissionDraft) {
-            void handleRetryMetadata();
-          } else {
-            setState((current) => ({ ...current, step: 'form', error: null }));
-            setTransaction(null);
-          }
-        }}
       />
     );
   }

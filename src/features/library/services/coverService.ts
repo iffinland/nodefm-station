@@ -6,10 +6,15 @@
  * → IMAGE QDN flow used by the normal Track upload path.
  * ============================================================ */
 
-import { publishResource } from '../../../qortium/qdn';
+import { publishMultipleResources, publishResource } from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import type { QdnResourceRef, Track } from '../../../types/domain';
-import { getCoverQdnIdentifier } from '../../tracks/services/trackService';
-import { updateTrack } from './libraryService';
+import {
+  getCoverQdnIdentifier,
+  getTrackQdnIdentifier,
+  editTrack,
+} from '../../tracks/services/trackService';
+import { getTrackById, trackPublishResource, upsertTrackLocally } from './libraryService';
 import type { EditTrackInput } from '../../tracks/services/trackService';
 
 export const COVER_INLINE_MAX_BYTES = 2 * 1024 * 1024;
@@ -66,9 +71,10 @@ export type PublishTrackCoverInput = {
   data64: string;
 };
 
-export async function publishTrackCoverImage(
-  input: PublishTrackCoverInput,
-): Promise<QdnResourceRef> {
+function trackCoverPublishResource(input: PublishTrackCoverInput): {
+  resource: PublishMultipleResource;
+  ref: QdnResourceRef;
+} {
   if (!input.publisherName.trim()) {
     throw new Error('A registered Qortium name is required to publish a cover.');
   }
@@ -79,24 +85,48 @@ export async function publishTrackCoverImage(
   }
 
   const identifier = getCoverQdnIdentifier();
-  const result = await publishResource({
+  const ref: QdnResourceRef = {
     service: 'IMAGE',
-    name: input.publisherName,
+    name: input.publisherName.trim(),
     identifier,
-    data64: input.data64,
-    title: `${input.title.trim() || 'Track'} cover`,
-    filename: input.file.name,
-  });
+  };
+
+  return {
+    resource: {
+      service: 'IMAGE',
+      name: input.publisherName.trim(),
+      identifier,
+      data64: input.data64,
+      title: `${input.title.trim() || 'Track'} cover`,
+      filename: input.file.name,
+    },
+    ref,
+  };
+}
+
+/**
+ * Build a cover resource and its QDN reference without publishing.
+ * Kept separate from the private builder so the Upload Audio service can
+ * prepare the complete media batch before publication.
+ */
+export function buildTrackCoverPublishResource(input: PublishTrackCoverInput): {
+  resource: PublishMultipleResource;
+  ref: QdnResourceRef;
+} {
+  return trackCoverPublishResource(input);
+}
+
+export async function publishTrackCoverImage(
+  input: PublishTrackCoverInput,
+): Promise<QdnResourceRef> {
+  const { resource, ref } = trackCoverPublishResource(input);
+  const result = await publishResource(resource);
 
   if (!result.accepted) {
     throw new Error('Cover publication was not accepted.');
   }
 
-  return {
-    service: 'IMAGE',
-    name: input.publisherName.trim(),
-    identifier,
-  };
+  return ref;
 }
 
 export type PublishAndUpdateTrackCoverInput = {
@@ -124,19 +154,114 @@ export type PublishAndUpdateTrackCoverInput = {
 export async function publishAndUpdateTrackCover(
   input: PublishAndUpdateTrackCoverInput,
 ): Promise<Track> {
-  const coverRef = await publishTrackCoverImage({
+  const cover = trackCoverPublishResource({
     publisherName: input.publisherName,
     title: input.title,
     file: input.file,
     data64: input.data64,
   });
 
-  return updateTrack(
-    input.trackId,
-    {
-      ...(input.metadata ?? {}),
-      cover: coverRef,
-    },
-    input.publisherName,
-  );
+  const current = getTrackById(input.trackId);
+  if (!current) {
+    throw new Error(`Track not found: ${input.trackId}`);
+  }
+
+  const track = editTrack(current, {
+    ...(input.metadata ?? {}),
+    cover: cover.ref,
+  });
+
+  const trackResource = trackPublishResource(track, input.publisherName);
+  const response = await publishMultipleResources([cover.resource, trackResource]);
+  const coverPublished = response.accepted
+    ? response.published.some((entry) => entry.resource.identifier === cover.ref.identifier)
+    : false;
+  const trackIdentifier = getTrackQdnIdentifier(track.trackId);
+  const trackPublished = response.accepted
+    ? response.published.some((entry) => entry.resource.identifier === trackIdentifier)
+    : false;
+
+  if (!coverPublished || !trackPublished) {
+    const coverFailure = response.failures.find(
+      (entry) => entry.resource.identifier === cover.ref.identifier,
+    );
+    const trackFailure = response.failures.find(
+      (entry) => entry.resource.identifier === trackIdentifier,
+    );
+
+    throw new Error(
+      `Failed to save track cover: ${
+        coverFailure?.error ??
+        trackFailure?.error ??
+        'QDN batch publication returned an incomplete result.'
+      }`,
+    );
+  }
+
+  return upsertTrackLocally(track);
+}
+
+export type PublishNewTrackWithCoverInput = {
+  track: Track;
+  publisherName: string;
+  cover?: PublishTrackCoverInput;
+};
+
+export type PublishNewTrackWithCoverResult = {
+  track: Track;
+  coverPublished: boolean;
+};
+
+/**
+ * Publish a newly-created station Track and, when supplied, its cover image
+ * in one coordinated QDN publication request.
+ */
+export async function publishNewTrackWithCover(
+  input: PublishNewTrackWithCoverInput,
+): Promise<PublishNewTrackWithCoverResult> {
+  const cover = input.cover
+    ? trackCoverPublishResource({
+        publisherName: input.cover.publisherName,
+        title: input.cover.title,
+        file: input.cover.file,
+        data64: input.cover.data64,
+      })
+    : undefined;
+  const trackResource = trackPublishResource(input.track, input.publisherName);
+  const resources = cover ? [cover.resource, trackResource] : [trackResource];
+  const response = await publishMultipleResources(resources);
+  const trackIdentifier = trackResource.identifier;
+  const trackPublished = response.accepted
+    ? response.published.some((entry) => entry.resource.identifier === trackIdentifier)
+    : false;
+
+  if (!trackPublished) {
+    const trackFailure = response.failures.find(
+      (entry) => entry.resource.identifier === trackIdentifier,
+    );
+    throw new Error(
+      `Failed to publish station track: ${
+        trackFailure?.error ?? 'QDN batch publication returned no result for the track.'
+      }`,
+    );
+  }
+
+  if (
+    cover &&
+    !response.published.some((entry) => entry.resource.identifier === cover.ref.identifier)
+  ) {
+    const coverFailure = response.failures.find(
+      (entry) => entry.resource.identifier === cover.ref.identifier,
+    );
+    throw new Error(
+      `Failed to publish track cover: ${
+        coverFailure?.error ?? 'QDN batch publication returned no result for the cover.'
+      }`,
+    );
+  }
+
+  return {
+    track: upsertTrackLocally(input.track),
+    coverPublished: Boolean(cover),
+  };
 }

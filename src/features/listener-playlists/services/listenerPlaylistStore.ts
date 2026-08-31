@@ -9,7 +9,12 @@
  * ============================================================ */
 
 import type { Playlist, PlaylistVersion, PlaylistVersionTrack } from '../../../types/domain';
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../../../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishMultipleResources,
+  searchQdnResources,
+} from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import {
   getQdnResourceReadErrorCode,
   isConfirmedQdnNotFoundError,
@@ -136,29 +141,32 @@ export function getListenerPlaylistLoadAction(
   return 'load';
 }
 
-async function persistPlaylist(playlist: Playlist, ownerName: string): Promise<void> {
+function playlistPublishResource(playlist: Playlist, ownerName: string): PublishMultipleResource {
   const data64 = btoa(unescape(encodeURIComponent(serializePlaylistForQdn(playlist))));
 
-  await publishResource({
+  return {
     service: LISTENER_PLAYLIST_QDN_SERVICE,
     name: ownerName.trim(),
     identifier: getListenerPlaylistQdnIdentifier(playlist.playlistId),
     data64,
     title: playlist.title,
     description: playlist.description,
-  });
+  };
 }
 
-async function persistVersion(version: PlaylistVersion, ownerName: string): Promise<void> {
+function versionPublishResource(
+  version: PlaylistVersion,
+  ownerName: string,
+): PublishMultipleResource {
   const data64 = btoa(unescape(encodeURIComponent(serializePlaylistVersionForQdn(version))));
 
-  await publishResource({
+  return {
     service: 'JSON',
     name: ownerName.trim(),
     identifier: getListenerPlaylistVersionQdnIdentifier(version.versionId),
     data64,
     title: `Listener playlist version ${version.versionNumber}`,
-  });
+  };
 }
 
 export async function loadListenerPlaylists(
@@ -403,39 +411,6 @@ export async function publishListenerPlaylist(
 
   const version = versionResult.version;
   const existingPlaylist = getListenerPlaylistById(draft.playlistId);
-
-  if (!existingPlaylist) {
-    onProgress?.('playlist');
-    const playlist = toListenerPlaylist(draft, version.versionId);
-
-    try {
-      await persistPlaylist(playlist, draft.ownerName);
-    } catch (persistError) {
-      return {
-        ok: false,
-        error: `Failed to publish listener playlist: ${
-          persistError instanceof Error ? persistError.message : 'Unknown error'
-        }`,
-        invalidTrackIds: [],
-      };
-    }
-
-    playlists = [...playlists, playlist];
-  }
-
-  try {
-    onProgress?.('version');
-    await persistVersion(version, draft.ownerName);
-  } catch (persistError) {
-    return {
-      ok: false,
-      error: `Failed to publish listener playlist version: ${
-        persistError instanceof Error ? persistError.message : 'Unknown error'
-      }`,
-      invalidTrackIds: [],
-    };
-  }
-
   const basePlaylist = existingPlaylist ?? toListenerPlaylist(draft, version.versionId);
   const updatedPlaylist: Playlist = {
     ...basePlaylist,
@@ -446,17 +421,60 @@ export async function publishListenerPlaylist(
     updatedAt: new Date().toISOString(),
   };
 
+  const versionResource = versionPublishResource(version, draft.ownerName);
+  const pointerResource = playlistPublishResource(updatedPlaylist, draft.ownerName);
+  const versionIdentifier = getListenerPlaylistVersionQdnIdentifier(version.versionId);
+  const pointerIdentifier = getListenerPlaylistQdnIdentifier(draft.playlistId);
+
+  if (!existingPlaylist) {
+    onProgress?.('playlist');
+  }
+  onProgress?.('version');
+  onProgress?.('pointer');
+
   try {
-    onProgress?.('pointer');
-    await persistPlaylist(updatedPlaylist, draft.ownerName);
-  } catch (persistError) {
+    const response = await publishMultipleResources([versionResource, pointerResource]);
+    const versionPublished = response.accepted
+      ? response.published.some((entry) => entry.resource.identifier === versionIdentifier)
+      : false;
+    const pointerPublished = response.accepted
+      ? response.published.some((entry) => entry.resource.identifier === pointerIdentifier)
+      : false;
+    const versionFailure = response.failures.find(
+      (entry) => entry.resource.identifier === versionIdentifier,
+    );
+    const pointerFailure = response.failures.find(
+      (entry) => entry.resource.identifier === pointerIdentifier,
+    );
+
+    if (!versionPublished) {
+      return {
+        ok: false,
+        error: `Failed to publish listener playlist version: ${
+          versionFailure?.error ?? 'QDN batch publication returned no result for the version.'
+        }`,
+        invalidTrackIds: [],
+      };
+    }
+
+    if (!pointerPublished) {
+      return {
+        ok: false,
+        partial: true,
+        playlist: updatedPlaylist,
+        version,
+        error: `Version published but listener playlist pointer update failed: ${
+          pointerFailure?.error ?? 'QDN batch publication returned no result for the pointer.'
+        }.`,
+      };
+    }
+  } catch (publishError) {
     return {
       ok: false,
-      partial: true,
-      version,
-      error: `Version published but listener playlist pointer update failed: ${
-        persistError instanceof Error ? persistError.message : 'Unknown error'
-      }.`,
+      error: `Failed to publish listener playlist: ${
+        publishError instanceof Error ? publishError.message : 'Unknown error'
+      }`,
+      invalidTrackIds: [],
     };
   }
 

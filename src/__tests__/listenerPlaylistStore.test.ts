@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../qortium/qdn', () => ({
   fetchQdnResourceData: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   searchQdnResources: vi.fn(),
 }));
@@ -21,7 +22,7 @@ vi.mock('../qortium/qdnReadError', async () => {
   };
 });
 
-import { publishResource, searchQdnResources } from '../qortium/qdn';
+import { publishMultipleResources, searchQdnResources } from '../qortium/qdn';
 import {
   loadListenerPlaylists,
   publishListenerPlaylist,
@@ -32,19 +33,28 @@ import {
 } from '../features/listener-playlists/services/listenerPlaylistStore';
 import { createListenerPlaylistDraft } from '../features/listener-playlists/services/listenerPlaylistService';
 
-const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedSearch = vi.mocked(searchQdnResources);
 
 describe('listenerPlaylistStore', () => {
   beforeEach(() => {
     resetListenerPlaylistStore();
-    mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedSearch.mockReset();
-    mockedPublish.mockResolvedValue({
+    mockedBatchPublish.mockImplementation(async (resources) => ({
       accepted: true,
-      action: 'PUBLISH_QDN_RESOURCE',
-      resource: { identifier: null, name: 'listener-a', service: 'JSON' },
-    } as never);
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
   });
 
   it('loads playlists for only the selected registered name/account', async () => {
@@ -57,18 +67,6 @@ describe('listenerPlaylistStore', () => {
           identifier: 'nodefm-listener-playlist-p1',
         },
       ];
-    });
-
-    mockedPublish.mockImplementation(async (input) => {
-      return {
-        accepted: true,
-        action: 'PUBLISH_QDN_RESOURCE',
-        resource: {
-          identifier: input.identifier ?? null,
-          name: input.name,
-          service: input.service,
-        },
-      };
     });
 
     await loadListenerPlaylists('listener-a', 'Q-listener-a');
@@ -90,14 +88,20 @@ describe('listenerPlaylistStore', () => {
     ]);
 
     expect(result.ok).toBe(true);
-    expect(mockedPublish).toHaveBeenCalledWith(
+    expect(mockedBatchPublish).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          service: 'PLAYLIST',
+          name: 'listener-a',
+          identifier: 'nodefm-listener-playlist-p1',
+        }),
+      ]),
+    );
+    expect(mockedBatchPublish).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        service: 'PLAYLIST',
-        name: 'listener-a',
-        identifier: 'nodefm-listener-playlist-p1',
+        name: 'NodeFM',
       }),
     );
-    expect(mockedPublish).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'NodeFM' }));
   });
 
   it('publishes an empty-title draft as the visible Untitled Playlist fallback', async () => {

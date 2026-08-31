@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../qortium/qdn', () => ({
   deleteQdnResource: vi.fn(),
   fetchQdnResourceData: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   searchQdnResources: vi.fn(),
 }));
@@ -28,7 +29,7 @@ vi.mock('../features/playlists/services/playlistVersionReferenceService', () => 
   };
 });
 
-import { deleteQdnResource, publishResource } from '../qortium/qdn';
+import { deleteQdnResource, publishMultipleResources, publishResource } from '../qortium/qdn';
 import { collectPlaylistVersionReferences } from '../features/playlists/services/playlistVersionReferenceService';
 import {
   addPlaylist,
@@ -42,6 +43,7 @@ import {
 
 const mockedDelete = vi.mocked(deleteQdnResource);
 const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedCollect = vi.mocked(collectPlaylistVersionReferences);
 
 function validTrack(durationMs = 60_000) {
@@ -71,12 +73,27 @@ describe('PlaylistVersion lifecycle', () => {
     resetPlaylistStore();
     mockedDelete.mockReset();
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedCollect.mockReset();
     mockedPublish.mockResolvedValue({
       accepted: true,
       action: 'PUBLISH_QDN_RESOURCE',
       resource: { identifier: null, name: 'NodeFM', service: 'JSON' },
     } as never);
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
     mockedCollect.mockResolvedValue([]);
   });
 

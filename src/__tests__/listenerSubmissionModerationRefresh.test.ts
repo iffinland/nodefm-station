@@ -11,6 +11,7 @@ vi.mock('../qortium/qdn', () => ({
   ensureQdnResourceReady: vi.fn(),
   fetchQdnResourceData: vi.fn(),
   getQdnResourceUrl: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   searchQdnResources: vi.fn(),
 }));
@@ -20,13 +21,23 @@ vi.mock('../qortium/identity', () => ({
 }));
 
 vi.mock('../features/library/services/libraryService', () => ({
-  addTrackToLibrary: vi.fn(),
   getTrackById: vi.fn(),
+  trackPublishResource: vi.fn(),
+  upsertTrackLocally: vi.fn(),
 }));
 
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishMultipleResources,
+  publishResource,
+  searchQdnResources,
+} from '../qortium/qdn';
 import { resolveNameWalletAddress } from '../qortium/identity';
-import { addTrackToLibrary, getTrackById } from '../features/library/services/libraryService';
+import {
+  getTrackById,
+  trackPublishResource,
+  upsertTrackLocally,
+} from '../features/library/services/libraryService';
 import {
   acceptSubmission,
   getSubmissionDiagnostics,
@@ -54,8 +65,10 @@ import type { SubmissionModeration } from '../types/domain';
 const mockedSearch = vi.mocked(searchQdnResources);
 const mockedFetch = vi.mocked(fetchQdnResourceData);
 const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedResolveName = vi.mocked(resolveNameWalletAddress);
-const mockedAddTrack = vi.mocked(addTrackToLibrary);
+const mockedTrackPublishResource = vi.mocked(trackPublishResource);
+const mockedUpsertTrack = vi.mocked(upsertTrackLocally);
 const mockedGetTrack = vi.mocked(getTrackById);
 
 const OWNER_ADDRESS = 'Q-owner';
@@ -169,13 +182,46 @@ describe('listener submission moderation refresh regression', () => {
     mockedSearch.mockReset();
     mockedFetch.mockReset();
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedResolveName.mockReset();
-    mockedAddTrack.mockReset();
+    mockedTrackPublishResource.mockReset();
+    mockedUpsertTrack.mockReset();
     mockedGetTrack.mockReset();
 
     mockedResolveName.mockResolvedValue(LISTENER_ADDRESS);
-    mockedAddTrack.mockResolvedValue(undefined as never);
     mockedGetTrack.mockReturnValue(undefined);
+    mockedTrackPublishResource.mockImplementation((track, ownerName) => ({
+      service: 'JSON',
+      name: ownerName,
+      identifier: `nodefm-track-${track.trackId}`,
+      data64: 'dHJhY2s=',
+      title: track.title,
+    }));
+    mockedBatchPublish.mockImplementation(async (resources) => {
+      for (const resource of resources) {
+        if (resource.identifier?.startsWith(MODERATION_PREFIX)) {
+          const payload = JSON.parse(atob(resource.data64 ?? '')) as SubmissionModeration | null;
+          if (payload && (payload.decision === 'accepted' || payload.decision === 'rejected')) {
+            moderationResources.set(resource.identifier, payload);
+          }
+        }
+      }
+
+      return {
+        accepted: true,
+        action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+        published: resources.map((resource) => ({
+          result: {},
+          resource: {
+            identifier: resource.identifier ?? null,
+            name: resource.name,
+            service: resource.service,
+          },
+          transactionSignature: 'signature',
+        })),
+        failures: [],
+      };
+    });
     mockedPublish.mockImplementation(async (input) => {
       const identifier = input.identifier ?? 'default';
       const name = input.name;
@@ -257,9 +303,34 @@ describe('listener submission moderation refresh regression', () => {
   it('keeps a failed moderation visible and does not turn it into accepted/rejected state', async () => {
     installDiscovery(37);
     await loadListenerSubmissions(STATION_NAME, OWNER_ADDRESS);
-    mockedPublish.mockRejectedValueOnce(new Error('moderation publish failed'));
-
     const first = reviewAt(0);
+    const firstSubmissionId = first.submission.submissionId;
+    mockedBatchPublish.mockResolvedValueOnce({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: [
+        {
+          result: {},
+          resource: {
+            identifier: `nodefm-track-sub-${firstSubmissionId}`,
+            name: STATION_NAME,
+            service: 'JSON',
+          },
+          transactionSignature: 'signature',
+        },
+      ],
+      failures: [
+        {
+          error: 'moderation publish failed',
+          resource: {
+            identifier: `nodefm-submission-mod-${firstSubmissionId}`,
+            name: STATION_NAME,
+            service: 'JSON',
+          },
+        },
+      ],
+    });
+
     await expect(
       acceptSubmission(first, STATION_NAME, OWNER_ADDRESS, OWNER_ADDRESS),
     ).rejects.toThrow(/moderation publication failed/);

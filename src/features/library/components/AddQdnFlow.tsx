@@ -10,11 +10,14 @@ import { LoadingState } from '../../../components/LoadingState';
 import { ErrorState } from '../../../components/ErrorState';
 import { Modal } from '../../../components/Modal';
 import {
+  PublicationProgress,
+  type PublicationProgressState,
+} from '../../../components/PublicationProgress';
+import {
   searchQdnResources,
   getQdnResourceUrl,
   ensureQdnResourceReady,
 } from '../../../qortium/qdn';
-import { useLibrary } from '../../../hooks/useLibrary';
 import { useStationIdentity } from '../../station';
 import { TaxonomyInput, useTaxonomy, getCanonicalTaxonomyValues } from '../../taxonomy';
 import {
@@ -24,8 +27,9 @@ import {
   TitleInput,
   isValidReleaseDateValue,
 } from '../../metadata-intelligence';
-import { publishTrackCoverImage, readCoverFile } from '../services/coverService';
+import { publishNewTrackWithCover, readCoverFile } from '../services/coverService';
 import { buildAddQdnTrackInput } from '../services/addQdnService';
+import { createTrack } from '../../tracks/services/trackService';
 import {
   resolveAudioDurationFromUrl,
   formatDurationMs,
@@ -64,9 +68,9 @@ export function AddQdnFlow({
   onClose: () => void;
   onComplete: () => void;
 }) {
-  const { createTrack } = useLibrary();
   const { ownerAddress, publisherName } = useStationIdentity();
   const { remember, genres: genreSuggestions, tags: tagSuggestions } = useTaxonomy();
+  const [publication, setPublication] = useState<PublicationProgressState | null>(null);
 
   const [state, setState] = useState<State>({
     step: 'search',
@@ -192,6 +196,14 @@ export function AddQdnFlow({
     }
 
     setState((s) => ({ ...s, step: 'importing', error: null, coverWarning: null }));
+    const hasCover = Boolean(state.coverFile && state.coverData64 && publisherName);
+    const rows: PublicationProgressState['rows'] = [
+      ...(hasCover
+        ? [{ id: 'cover' as const, label: 'Cover image', status: 'active' as const }]
+        : []),
+      { id: 'track', label: 'Track metadata', status: 'active' },
+    ];
+    setPublication({ phase: 'publishing', rows });
 
     try {
       const genres = state.genres.trim()
@@ -200,26 +212,7 @@ export function AddQdnFlow({
       const tags = state.tags.trim()
         ? getCanonicalTaxonomyValues(state.tags, tagSuggestions)
         : undefined;
-      let coverRef: { service: string; name: string; identifier?: string } | undefined;
-      let coverWarning: string | null = null;
-
-      if (state.coverFile && state.coverData64 && publisherName) {
-        try {
-          coverRef = await publishTrackCoverImage({
-            publisherName,
-            title: state.title || state.selected.name || 'Untitled',
-            file: state.coverFile,
-            data64: state.coverData64,
-          });
-        } catch (error) {
-          coverWarning =
-            error instanceof Error
-              ? `Cover publication failed; the track was added without a cover. ${error.message}`
-              : 'Cover publication failed; the track was added without a cover.';
-        }
-      }
-
-      await createTrack(
+      const track = createTrack(
         buildAddQdnTrackInput({
           title: state.title || state.selected.name || 'Untitled',
           artist: state.artist || state.selected.metadata?.title || undefined,
@@ -234,20 +227,61 @@ export function AddQdnFlow({
           durationMs: state.durationMs,
           genres,
           tags,
-          cover: coverRef,
           ownerAddress,
         }),
       );
 
+      await publishNewTrackWithCover({
+        track,
+        publisherName: publisherName!,
+        cover:
+          state.coverFile && state.coverData64 && publisherName
+            ? {
+                publisherName,
+                title: track.title,
+                file: state.coverFile,
+                data64: state.coverData64,
+              }
+            : undefined,
+      });
+
       remember('genres', genres ?? []);
       remember('tags', tags ?? []);
 
-      setState((s) => ({ ...s, step: 'done', coverWarning }));
+      setPublication((current) =>
+        current
+          ? {
+              phase: 'success' as const,
+              rows: current.rows.map((row) => ({
+                ...row,
+                status: 'succeeded' as const,
+                error: undefined,
+              })),
+              error: undefined,
+            }
+          : current,
+      );
+      setState((s) => ({ ...s, step: 'done', coverWarning: null }));
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Import failed.';
+
+      setPublication((current) =>
+        current
+          ? {
+              phase: 'failed' as const,
+              rows: current.rows.map((row) =>
+                row.status === 'active'
+                  ? { ...row, status: 'failed' as const, error: message }
+                  : row,
+              ),
+              error: message,
+            }
+          : current,
+      );
       setState((s) => ({
         ...s,
         step: 'error',
-        error: error instanceof Error ? error.message : 'Import failed.',
+        error: message,
       }));
     }
   }, [
@@ -264,255 +298,276 @@ export function AddQdnFlow({
     state.durationMs,
     ownerAddress,
     publisherName,
-    createTrack,
     genreSuggestions,
     tagSuggestions,
     remember,
   ]);
 
+  if (publication) {
+    const title = publication.phase === 'success' ? 'Track Added' : 'Adding Track';
+
+    return (
+      <PublicationProgress
+        title={title}
+        state={publication}
+        successMessage="Track added to library."
+        onClose={onClose}
+        onSuccess={onComplete}
+      />
+    );
+  }
+
   return (
     <Modal title="Add from QDN" onClose={onClose} wide>
-      {state.step === 'search' && (
-        <div className="add-qdn__search">
-          <p>Search for existing QDN audio resources to add to your library.</p>
-          <div className="add-qdn__search-bar">
-            <input
-              type="text"
-              value={state.searchQuery}
-              onChange={(e) => setState((s) => ({ ...s, searchQuery: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Search QDN audio…"
-            />
-            <button
-              className="button button--primary"
-              type="button"
-              onClick={handleSearch}
-              disabled={state.searching || !state.searchQuery.trim()}
-            >
-              Search
-            </button>
-          </div>
-
-          {state.searching && <LoadingState message="Searching QDN…" />}
-
-          {state.searchError && (
-            <ErrorState message="Search failed" detail={state.searchError} onRetry={handleSearch} />
-          )}
-
-          {!state.searching && state.results.length > 0 && (
-            <div className="add-qdn__results">
-              {state.results.map((r) => (
-                <div
-                  key={`${r.service}-${r.name}`}
-                  className="add-qdn__result-item"
-                  onClick={() => handleSelect(r)}
-                >
-                  <div className="add-qdn__result-info">
-                    <strong>{r.metadata?.title ?? r.name}</strong>
-                    {r.metadata?.description && (
-                      <span className="add-qdn__result-desc">{r.metadata.description}</span>
-                    )}
-                    <span className="add-qdn__result-service">{r.service}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!state.searching && state.results.length === 0 && !state.searchError && (
-            <p className="add-qdn__empty">Enter a search query to find QDN audio resources.</p>
-          )}
-        </div>
-      )}
-
-      {state.step === 'confirm' && state.selected && (
-        <div className="add-qdn__confirm">
-          <h3>Selected Resource</h3>
-          <div className="add-qdn__resource-detail">
-            <p>
-              <strong>Name:</strong> {state.selected.metadata?.title ?? state.selected.name}
-            </p>
-            <p>
-              <strong>Service:</strong> {state.selected.service}
-            </p>
-            {state.selected.metadata?.description && (
-              <p>
-                <strong>Description:</strong> {state.selected.metadata.description}
-              </p>
-            )}
-            <p>
-              <strong>Duration:</strong>{' '}
-              {state.durationResolving
-                ? 'Resolving…'
-                : state.durationMs !== null
-                  ? formatDurationMs(state.durationMs)
-                  : 'Unknown'}
-            </p>
-          </div>
-
-          {state.error && <p className="form-error">{state.error}</p>}
-
-          <div className="form-actions">
-            <button
-              className="button button--secondary"
-              type="button"
-              onClick={() => setState((s) => ({ ...s, step: 'search' }))}
-            >
-              Back to Search
-            </button>
-            <button
-              className="button button--primary"
-              type="button"
-              onClick={() => setState((s) => ({ ...s, step: 'metadata' }))}
-              disabled={
-                state.durationResolving ||
-                state.durationMs === null ||
-                !isValidDurationMs(state.durationMs)
-              }
-            >
-              Add Metadata
-            </button>
-          </div>
-        </div>
-      )}
-
-      {state.step === 'metadata' && (
-        <div className="add-qdn__metadata">
-          <h3>Track Metadata</h3>
-
-          <label className="form-field">
-            Title
-            <TitleInput
-              value={state.title}
-              onChange={(value) => setState((s) => ({ ...s, title: value }))}
-              artistValue={state.artist}
-            />
-          </label>
-
-          <label className="form-field">
-            Artist
-            <ArtistInput
-              value={state.artist}
-              onChange={(value) => setState((s) => ({ ...s, artist: value }))}
-            />
-          </label>
-
-          <label className="form-field">
-            Album
-            <AlbumInput
-              value={state.album}
-              onChange={(value) => setState((s) => ({ ...s, album: value }))}
-              artistValue={state.artist}
-              placeholder="Optional album name"
-            />
-          </label>
-
-          <label className="form-field">
-            Release date
-            <ReleaseDateInput
-              value={state.releaseDate}
-              onChange={(value) => setState((s) => ({ ...s, releaseDate: value }))}
-              placeholder="1991-08-12"
-            />
-          </label>
-
-          <label className="form-field">
-            Description
-            <textarea
-              value={state.description}
-              onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-              rows={2}
-            />
-          </label>
-
-          <label className="form-field">
-            Genres
-            <TaxonomyInput
-              kind="genres"
-              value={state.genres}
-              onChange={(value) => setState((s) => ({ ...s, genres: value }))}
-              placeholder="Rock, Electronic"
-            />
-          </label>
-
-          <label className="form-field">
-            Tags
-            <TaxonomyInput
-              kind="tags"
-              value={state.tags}
-              onChange={(value) => setState((s) => ({ ...s, tags: value }))}
-              placeholder="chill, upbeat, instrumental"
-            />
-          </label>
-
-          <div className="form-field">
-            <label>Cover Image (optional, max 2 MB)</label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void handleCoverSelected(file);
-              }}
-            />
-            {state.coverData64 ? (
-              <img
-                src={state.coverFile ? URL.createObjectURL(state.coverFile) : ''}
-                alt="Cover preview"
-                className="upload-flow__cover-preview"
+      <>
+        {state.step === 'search' && (
+          <div className="add-qdn__search">
+            <p>Search for existing QDN audio resources to add to your library.</p>
+            <div className="add-qdn__search-bar">
+              <input
+                type="text"
+                value={state.searchQuery}
+                onChange={(e) => setState((s) => ({ ...s, searchQuery: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder="Search QDN audio…"
               />
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={handleSearch}
+                disabled={state.searching || !state.searchQuery.trim()}
+              >
+                Search
+              </button>
+            </div>
+
+            {state.searching && <LoadingState message="Searching QDN…" />}
+
+            {state.searchError && (
+              <ErrorState
+                message="Search failed"
+                detail={state.searchError}
+                onRetry={handleSearch}
+              />
+            )}
+
+            {!state.searching && state.results.length > 0 && (
+              <div className="add-qdn__results">
+                {state.results.map((r) => (
+                  <div
+                    key={`${r.service}-${r.name}`}
+                    className="add-qdn__result-item"
+                    onClick={() => handleSelect(r)}
+                  >
+                    <div className="add-qdn__result-info">
+                      <strong>{r.metadata?.title ?? r.name}</strong>
+                      {r.metadata?.description && (
+                        <span className="add-qdn__result-desc">{r.metadata.description}</span>
+                      )}
+                      <span className="add-qdn__result-service">{r.service}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!state.searching && state.results.length === 0 && !state.searchError && (
+              <p className="add-qdn__empty">Enter a search query to find QDN audio resources.</p>
+            )}
+          </div>
+        )}
+
+        {state.step === 'confirm' && state.selected && (
+          <div className="add-qdn__confirm">
+            <h3>Selected Resource</h3>
+            <div className="add-qdn__resource-detail">
+              <p>
+                <strong>Name:</strong> {state.selected.metadata?.title ?? state.selected.name}
+              </p>
+              <p>
+                <strong>Service:</strong> {state.selected.service}
+              </p>
+              {state.selected.metadata?.description && (
+                <p>
+                  <strong>Description:</strong> {state.selected.metadata.description}
+                </p>
+              )}
+              <p>
+                <strong>Duration:</strong>{' '}
+                {state.durationResolving
+                  ? 'Resolving…'
+                  : state.durationMs !== null
+                    ? formatDurationMs(state.durationMs)
+                    : 'Unknown'}
+              </p>
+            </div>
+
+            {state.error && <p className="form-error">{state.error}</p>}
+
+            <div className="form-actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => setState((s) => ({ ...s, step: 'search' }))}
+              >
+                Back to Search
+              </button>
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={() => setState((s) => ({ ...s, step: 'metadata' }))}
+                disabled={
+                  state.durationResolving ||
+                  state.durationMs === null ||
+                  !isValidDurationMs(state.durationMs)
+                }
+              >
+                Add Metadata
+              </button>
+            </div>
+          </div>
+        )}
+
+        {state.step === 'metadata' && (
+          <div className="add-qdn__metadata">
+            <h3>Track Metadata</h3>
+
+            <label className="form-field">
+              Title
+              <TitleInput
+                value={state.title}
+                onChange={(value) => setState((s) => ({ ...s, title: value }))}
+                artistValue={state.artist}
+              />
+            </label>
+
+            <label className="form-field">
+              Artist
+              <ArtistInput
+                value={state.artist}
+                onChange={(value) => setState((s) => ({ ...s, artist: value }))}
+              />
+            </label>
+
+            <label className="form-field">
+              Album
+              <AlbumInput
+                value={state.album}
+                onChange={(value) => setState((s) => ({ ...s, album: value }))}
+                artistValue={state.artist}
+                placeholder="Optional album name"
+              />
+            </label>
+
+            <label className="form-field">
+              Release date
+              <ReleaseDateInput
+                value={state.releaseDate}
+                onChange={(value) => setState((s) => ({ ...s, releaseDate: value }))}
+                placeholder="1991-08-12"
+              />
+            </label>
+
+            <label className="form-field">
+              Description
+              <textarea
+                value={state.description}
+                onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
+                rows={2}
+              />
+            </label>
+
+            <label className="form-field">
+              Genres
+              <TaxonomyInput
+                kind="genres"
+                value={state.genres}
+                onChange={(value) => setState((s) => ({ ...s, genres: value }))}
+                placeholder="Rock, Electronic"
+              />
+            </label>
+
+            <label className="form-field">
+              Tags
+              <TaxonomyInput
+                kind="tags"
+                value={state.tags}
+                onChange={(value) => setState((s) => ({ ...s, tags: value }))}
+                placeholder="chill, upbeat, instrumental"
+              />
+            </label>
+
+            <div className="form-field">
+              <label>Cover Image (optional, max 2 MB)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void handleCoverSelected(file);
+                }}
+              />
+              {state.coverData64 ? (
+                <img
+                  src={state.coverFile ? URL.createObjectURL(state.coverFile) : ''}
+                  alt="Cover preview"
+                  className="upload-flow__cover-preview"
+                />
+              ) : null}
+            </div>
+
+            <div className="form-actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => setState((s) => ({ ...s, step: 'confirm' }))}
+              >
+                Back
+              </button>
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={handleImport}
+                disabled={
+                  !state.title || state.durationMs === null || !isValidDurationMs(state.durationMs)
+                }
+              >
+                Add to Library
+              </button>
+            </div>
+          </div>
+        )}
+
+        {state.step === 'importing' && <LoadingState message="Adding track to library…" />}
+
+        {state.step === 'done' && (
+          <div className="upload-flow__done">
+            <p className="upload-flow__success">✅ Track added to library!</p>
+            {state.coverWarning ? (
+              <p className="upload-flow__partial">{state.coverWarning}</p>
             ) : null}
+            <div className="form-actions">
+              <button className="button button--primary" type="button" onClick={onComplete}>
+                Done
+              </button>
+            </div>
           </div>
+        )}
 
-          <div className="form-actions">
-            <button
-              className="button button--secondary"
-              type="button"
-              onClick={() => setState((s) => ({ ...s, step: 'confirm' }))}
-            >
-              Back
-            </button>
-            <button
-              className="button button--primary"
-              type="button"
-              onClick={handleImport}
-              disabled={
-                !state.title || state.durationMs === null || !isValidDurationMs(state.durationMs)
-              }
-            >
-              Add to Library
-            </button>
-          </div>
-        </div>
-      )}
-
-      {state.step === 'importing' && <LoadingState message="Adding track to library…" />}
-
-      {state.step === 'done' && (
-        <div className="upload-flow__done">
-          <p className="upload-flow__success">✅ Track added to library!</p>
-          {state.coverWarning ? <p className="upload-flow__partial">{state.coverWarning}</p> : null}
-          <div className="form-actions">
-            <button className="button button--primary" type="button" onClick={onComplete}>
-              Done
-            </button>
-          </div>
-        </div>
-      )}
-
-      {state.step === 'error' && (
-        <ErrorState
-          message="Import failed"
-          detail={state.error ?? undefined}
-          onRetry={() =>
-            setState((s) => ({
-              ...s,
-              step: state.selected ? 'confirm' : 'search',
-              error: null,
-            }))
-          }
-        />
-      )}
+        {state.step === 'error' && (
+          <ErrorState
+            message="Import failed"
+            detail={state.error ?? undefined}
+            onRetry={() =>
+              setState((s) => ({
+                ...s,
+                step: state.selected ? 'confirm' : 'search',
+                error: null,
+              }))
+            }
+          />
+        )}
+      </>
     </Modal>
   );
 }

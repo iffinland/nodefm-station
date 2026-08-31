@@ -8,10 +8,12 @@
 import type { Playlist, PlaylistVersion } from '../../../types/domain';
 import {
   publishResource,
+  publishMultipleResources,
   fetchQdnResourceData,
   searchQdnResources,
   deleteQdnResource,
 } from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import {
   createPlaylist,
   editPlaylist,
@@ -80,31 +82,41 @@ const VERSION_SERVICE = 'JSON';
 const PLAYLIST_IDENTIFIER_PREFIX = 'nodefm-playlist-';
 const VERSION_IDENTIFIER_PREFIX = 'nodefm-playlist-version-';
 
-async function persistPlaylist(playlist: Playlist, ownerName: string): Promise<void> {
+export function playlistPublishResource(
+  playlist: Playlist,
+  ownerName: string,
+): PublishMultipleResource {
   const json = serializePlaylistForQdn(playlist);
   const base64 = btoa(unescape(encodeURIComponent(json)));
 
-  await publishResource({
+  return {
     service: PLAYLIST_SERVICE,
     name: ownerName,
     identifier: getPlaylistQdnIdentifier(playlist.playlistId),
     data64: base64,
     title: playlist.title,
     description: playlist.description,
-  });
+  };
 }
 
-async function persistPlaylistVersion(version: PlaylistVersion, ownerName: string): Promise<void> {
+async function persistPlaylist(playlist: Playlist, ownerName: string): Promise<void> {
+  await publishResource(playlistPublishResource(playlist, ownerName));
+}
+
+export function playlistVersionPublishResource(
+  version: PlaylistVersion,
+  ownerName: string,
+): PublishMultipleResource {
   const json = serializePlaylistVersionForQdn(version);
   const base64 = btoa(unescape(encodeURIComponent(json)));
 
-  await publishResource({
+  return {
     service: VERSION_SERVICE,
     name: ownerName,
     identifier: getPlaylistVersionQdnIdentifier(version.versionId),
     data64: base64,
     title: `Version ${version.versionNumber}`,
-  });
+  };
 }
 
 // ── Subscriptions ───────────────────────────────────────────────────
@@ -114,6 +126,17 @@ export function subscribeToPlaylistStore(onChange: StoreListener): () => void {
   return () => {
     listeners.delete(onChange);
   };
+}
+
+export function addPlaylistToLocalStore(playlist: Playlist): void {
+  playlists = [...playlists, playlist];
+  notify();
+}
+
+export function addPlaylistVersionToLocalStore(playlistId: string, version: PlaylistVersion): void {
+  const existing = playlistVersions.get(playlistId) ?? [];
+  playlistVersions.set(playlistId, [...existing, version]);
+  notify();
 }
 
 // ── Getters ─────────────────────────────────────────────────────────
@@ -466,23 +489,22 @@ export async function publishPlaylistVersion(
   }
 
   const { version } = result;
+  const versionResource = playlistVersionPublishResource(version, ownerName);
 
   // 1. Publish the immutable version resource
-  try {
-    onProgress?.('version');
-    await persistPlaylistVersion(version, ownerName);
-  } catch (error) {
-    return {
-      ok: false,
-      error: `Failed to publish playlist version: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      invalidTrackIds: [],
-    };
-  }
-
-  // 2. Update the logical playlist's latestVersionId pointer
   const playlist = playlists.find((p) => p.playlistId === input.playlistId);
   if (!playlist) {
-    // Version published but playlist not in local store — partial state
+    try {
+      onProgress?.('version');
+      await publishResource(versionResource);
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to publish playlist version: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        invalidTrackIds: [],
+      };
+    }
+
     return {
       ok: false,
       partial: true,
@@ -497,22 +519,66 @@ export async function publishPlaylistVersion(
     latestVersionId: version.versionId,
     updatedAt: new Date().toISOString(),
   };
+  const pointerResource = playlistPublishResource(updatedPlaylist, ownerName);
+  const resources = [versionResource, pointerResource];
 
   try {
-    onProgress?.('pointer');
-    await persistPlaylist(updatedPlaylist, ownerName);
+    onProgress?.('version');
+    const response = await publishMultipleResources(resources);
+    const versionIdentifier = getPlaylistVersionQdnIdentifier(version.versionId);
+    const pointerIdentifier = getPlaylistQdnIdentifier(input.playlistId);
+    const versionPublished = response.accepted
+      ? response.published.some((entry) => entry.resource.identifier === versionIdentifier)
+      : false;
+    const pointerPublished = response.accepted
+      ? response.published.some((entry) => entry.resource.identifier === pointerIdentifier)
+      : false;
+    const failure = response.failures.find(
+      (entry) => entry.resource.identifier === versionIdentifier,
+    );
+
+    if (!versionPublished) {
+      return {
+        ok: false,
+        error: `Failed to publish playlist version: ${failure?.error ?? 'QDN batch publication returned no result for the version.'}`,
+        invalidTrackIds: [],
+      };
+    }
+
+    if (!pointerPublished) {
+      const pointerFailure = response.failures.find(
+        (entry) => entry.resource.identifier === pointerIdentifier,
+      );
+      return {
+        ok: false,
+        partial: true,
+        version,
+        error: `Version published but playlist pointer update failed: ${
+          pointerFailure?.error ?? 'QDN batch publication returned no result for the pointer.'
+        }. The version was saved as ${versionIdentifier}.`,
+      };
+    }
   } catch (error) {
-    // Version published, playlist pointer update failed — partial state
+    // A batch failure means we cannot prove either resource was published.
+    return {
+      ok: false,
+      error: `Failed to publish playlist version: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      invalidTrackIds: [],
+    };
+  }
+
+  // 2. Update local state only after both resources are confirmed.
+  const pIndex = playlists.findIndex((p) => p.playlistId === input.playlistId);
+  if (pIndex === -1) {
     return {
       ok: false,
       partial: true,
       version,
-      error: `Version published but playlist pointer update failed: ${error instanceof Error ? error.message : 'Unknown error'}. The version was saved as ${getPlaylistVersionQdnIdentifier(version.versionId)}.`,
+      error:
+        'Version and pointer published successfully but the playlist was no longer present in local state.',
     };
   }
 
-  // 3. Update local state
-  const pIndex = playlists.findIndex((p) => p.playlistId === input.playlistId);
   playlists = [...playlists.slice(0, pIndex), updatedPlaylist, ...playlists.slice(pIndex + 1)];
 
   const existing = playlistVersions.get(input.playlistId) ?? [];

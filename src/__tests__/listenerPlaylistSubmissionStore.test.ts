@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../qortium/qdn', () => ({
   fetchQdnResourceData: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   searchQdnResources: vi.fn(),
 }));
@@ -21,17 +22,27 @@ vi.mock('../qortium/qdnReadError', async () => {
 });
 
 vi.mock('../features/playlists/services/playlistStore', () => ({
-  addPlaylist: vi.fn(),
-  publishPlaylistVersion: vi.fn(),
+  addPlaylistToLocalStore: vi.fn(),
+  addPlaylistVersionToLocalStore: vi.fn(),
+  playlistPublishResource: vi.fn(),
+  playlistVersionPublishResource: vi.fn(),
 }));
 
 vi.mock('../features/library/services/libraryService', () => ({
   getTrackById: vi.fn(),
 }));
 
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishMultipleResources,
+  publishResource,
+  searchQdnResources,
+} from '../qortium/qdn';
 import { isConfirmedQdnNotFoundError } from '../qortium/qdnReadError';
-import { addPlaylist, publishPlaylistVersion } from '../features/playlists/services/playlistStore';
+import {
+  playlistPublishResource,
+  playlistVersionPublishResource,
+} from '../features/playlists/services/playlistStore';
 import { getTrackById } from '../features/library/services/libraryService';
 import {
   acceptListenerPlaylistSubmission,
@@ -53,10 +64,11 @@ import {
 
 const mockedFetch = vi.mocked(fetchQdnResourceData);
 const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedSearch = vi.mocked(searchQdnResources);
 const mockedNotFound = vi.mocked(isConfirmedQdnNotFoundError);
-const mockedAddPlaylist = vi.mocked(addPlaylist);
-const mockedPublishVersion = vi.mocked(publishPlaylistVersion);
+const mockedPlaylistPublishResource = vi.mocked(playlistPublishResource);
+const mockedVersionPublishResource = vi.mocked(playlistVersionPublishResource);
 const mockedGetTrack = vi.mocked(getTrackById);
 
 const LISTENER = 'listener-a';
@@ -97,13 +109,14 @@ describe('listener playlist submission store', () => {
     resetListenerPlaylistSubmissionStore();
     mockedFetch.mockReset();
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedSearch.mockReset();
     mockedNotFound.mockReset();
     mockedNotFound.mockImplementation(
       (error) => error instanceof Error && error.message.includes('missing moderation'),
     );
-    mockedAddPlaylist.mockReset();
-    mockedPublishVersion.mockReset();
+    mockedPlaylistPublishResource.mockReset();
+    mockedVersionPublishResource.mockReset();
     mockedGetTrack.mockReset();
 
     mockedPublish.mockResolvedValue({
@@ -111,6 +124,34 @@ describe('listener playlist submission store', () => {
       action: 'PUBLISH_QDN_RESOURCE',
       resource: { identifier: null, name: LISTENER, service: 'JSON' },
     } as never);
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
+    mockedPlaylistPublishResource.mockImplementation((playlist, ownerName) => ({
+      service: 'PLAYLIST',
+      name: ownerName,
+      identifier: `nodefm-playlist-${playlist.playlistId}`,
+      data64: 'cGxheWxpc3Q=',
+      title: playlist.title,
+    }));
+    mockedVersionPublishResource.mockImplementation((version, ownerName) => ({
+      service: 'JSON',
+      name: ownerName,
+      identifier: `nodefm-playlist-version-${version.versionId}`,
+      data64: 'dmVyc2lvbg==',
+      title: `Version ${version.versionNumber}`,
+    }));
 
     mockedGetTrack.mockReturnValue({
       schemaVersion: 1,
@@ -174,43 +215,15 @@ describe('listener playlist submission store', () => {
       throw new Error(`unexpected ${String(ref.identifier)}`);
     });
 
-    mockedAddPlaylist.mockResolvedValue({
-      schemaVersion: 1,
-      playlistId: 'station-p1',
-      ownerAddress: OWNER,
-      title: 'Forest Night',
-      visibility: 'private',
-      latestVersionId: '',
-      createdAt: '2026-08-29T00:00:00.000Z',
-      updatedAt: '2026-08-29T00:00:00.000Z',
-    });
-    mockedPublishVersion.mockResolvedValue({
-      ok: true,
-      version: {
-        schemaVersion: 1,
-        playlistId: 'station-p1',
-        versionId: 'station-v1',
-        versionNumber: 1,
-        createdBy: OWNER,
-        createdAt: '2026-08-29T00:00:00.000Z',
-        tracks: [{ trackId: 't1', durationMs: 1000 }],
-        totalDurationMs: 1000,
-      },
-    } as never);
-
     const result = await acceptListenerPlaylistSubmission(review(), STATION, OWNER, OWNER);
 
     expect(result.status).toBe('accepted');
-    expect(mockedAddPlaylist).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerAddress: OWNER, visibility: 'private' }),
-      STATION,
-    );
-    expect(mockedPublishVersion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        playlistId: 'station-p1',
-        tracks: [{ trackId: 't1', durationMs: 1000, kind: 'STATION_TRACK' }],
-      }),
-      STATION,
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    expect(mockedBatchPublish.mock.calls[0][0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ service: 'PLAYLIST', name: STATION }),
+        expect.objectContaining({ service: 'JSON', name: STATION }),
+      ]),
     );
   });
 
@@ -299,40 +312,10 @@ describe('listener playlist submission store', () => {
       throw new Error(`unexpected ${String(ref.identifier)}`);
     });
 
-    mockedAddPlaylist.mockResolvedValue({
-      schemaVersion: 1,
-      playlistId: 'station-p1',
-      ownerAddress: OWNER,
-      title: 'Forest Night',
-      visibility: 'private',
-      latestVersionId: '',
-      createdAt: '2026-08-29T00:00:00.000Z',
-      updatedAt: '2026-08-29T00:00:00.000Z',
-    });
-    mockedPublishVersion.mockResolvedValue({
-      ok: true,
-      version: {
-        schemaVersion: 1,
-        playlistId: 'station-p1',
-        versionId: 'station-v1',
-        versionNumber: 1,
-        createdBy: OWNER,
-        createdAt: '2026-08-29T00:00:00.000Z',
-        tracks: [{ trackId: 'sub-sub-1', durationMs: 2000 }],
-        totalDurationMs: 2000,
-      },
-    } as never);
-
     const result = await acceptListenerPlaylistSubmission(review(), STATION, OWNER, OWNER);
 
     expect(result.status).toBe('accepted');
-    expect(mockedPublishVersion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        playlistId: 'station-p1',
-        tracks: [{ trackId: 'sub-sub-1', durationMs: 2000, kind: 'STATION_TRACK' }],
-      }),
-      STATION,
-    );
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
   });
 
   it('reject leaves the listener playlist untouched', async () => {
@@ -348,8 +331,7 @@ describe('listener playlist submission store', () => {
     );
 
     expect(result.decision).toBe('rejected');
-    expect(mockedAddPlaylist).not.toHaveBeenCalled();
-    expect(mockedPublishVersion).not.toHaveBeenCalled();
+    expect(mockedBatchPublish).not.toHaveBeenCalled();
   });
 
   it('loads submissions and resolves pending moderation', async () => {

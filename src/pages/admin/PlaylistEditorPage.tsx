@@ -97,10 +97,51 @@ export default function PlaylistEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<string | null>(null);
   const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
+  const [transactionTitle, setTransactionTitle] = useState('Publish Playlist Version');
   const [versionActionBusy, setVersionActionBusy] = useState<string | null>(null);
   const [versionActionResult, setVersionActionResult] = useState<string | null>(null);
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  const beginTransaction = useCallback((title: string, label: string) => {
+    setTransactionTitle(title);
+    setTransaction(createQdnTransactionState([{ id: 'write', label }], { retryable: true }));
+    setTransaction((current) =>
+      current ? markQdnTransactionChunkActive(current, 'write') : current,
+    );
+  }, []);
+
+  const finishTransactionSuccess = useCallback((message: string) => {
+    setTransaction((current) =>
+      current
+        ? {
+            ...current,
+            chunks: current.chunks.map((item) => ({ ...item, status: 'succeeded' as const })),
+            phase: 'success' as const,
+            successMessage: message,
+            retryable: false,
+          }
+        : current,
+    );
+  }, []);
+
+  const finishTransactionError = useCallback((error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : fallback;
+    setTransaction((current) =>
+      current
+        ? {
+            ...current,
+            chunks: current.chunks.map((item) =>
+              item.status === 'active' ? { ...item, status: 'failed' as const } : item,
+            ),
+            phase: 'failed' as const,
+            error: message,
+            retryable: true,
+          }
+        : current,
+    );
+    return message;
+  }, []);
 
   // Reset editor-local draft state whenever the account or playlist changes.
   useEffect(() => {
@@ -201,6 +242,7 @@ export default function PlaylistEditorPage() {
     if (!playlist) return;
     setSaving(true);
     setError(null);
+    beginTransaction('Save Playlist', 'Update playlist metadata');
 
     try {
       const input: EditPlaylistInput = {
@@ -209,13 +251,23 @@ export default function PlaylistEditorPage() {
         visibility: editVisibility,
       };
       await editPlaylist(playlist.playlistId, input);
+      finishTransactionSuccess('Playlist metadata saved.');
       setEditingMeta(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save.');
+      setError(finishTransactionError(err, 'Failed to save.'));
     } finally {
       setSaving(false);
     }
-  }, [playlist, editTitle, editDescription, editVisibility, editPlaylist]);
+  }, [
+    beginTransaction,
+    editPlaylist,
+    editDescription,
+    editTitle,
+    editVisibility,
+    finishTransactionError,
+    finishTransactionSuccess,
+    playlist,
+  ]);
 
   const handleAddTrack = useCallback(
     (track: Track) => {
@@ -273,6 +325,7 @@ export default function PlaylistEditorPage() {
     setPublishing(true);
     setError(null);
     setPublishResult(null);
+    setTransactionTitle('Publish Playlist Version');
     setTransaction(
       createQdnTransactionState(
         [
@@ -349,12 +402,20 @@ export default function PlaylistEditorPage() {
 
   const handleDuplicate = useCallback(async () => {
     if (!playlist) return;
+    beginTransaction('Duplicate Playlist', 'Duplicate playlist');
     try {
       await duplicatePlaylist(playlist.playlistId);
+      finishTransactionSuccess('Playlist duplicated.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to duplicate.');
+      setError(finishTransactionError(err, 'Failed to duplicate.'));
     }
-  }, [playlist, duplicatePlaylist]);
+  }, [
+    beginTransaction,
+    duplicatePlaylist,
+    finishTransactionError,
+    finishTransactionSuccess,
+    playlist,
+  ]);
 
   const handleDeleteVersion = useCallback(
     async (versionId: string) => {
@@ -363,17 +424,26 @@ export default function PlaylistEditorPage() {
       setVersionActionBusy(`delete:${versionId}`);
       setVersionActionResult(null);
       setError(null);
+      beginTransaction('Delete Playlist Version', 'Delete playlist version');
 
       try {
         await deleteVersion(versionId);
+        finishTransactionSuccess('Version deleted successfully.');
         setVersionActionResult('Version deleted successfully.');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to delete playlist version.');
+        setError(finishTransactionError(err, 'Failed to delete playlist version.'));
       } finally {
         setVersionActionBusy(null);
       }
     },
-    [deleteVersion, playlist, versionActionBusy],
+    [
+      beginTransaction,
+      deleteVersion,
+      finishTransactionError,
+      finishTransactionSuccess,
+      playlist,
+      versionActionBusy,
+    ],
   );
 
   const handleRestoreVersion = useCallback(
@@ -383,17 +453,26 @@ export default function PlaylistEditorPage() {
       setVersionActionBusy(`restore:${versionId}`);
       setVersionActionResult(null);
       setError(null);
+      beginTransaction('Restore Playlist Version', 'Restore version as latest');
 
       try {
         await restoreVersionAsLatest(playlist.playlistId, versionId);
+        finishTransactionSuccess('Version restored as latest.');
         setVersionActionResult('Version restored as latest.');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to restore playlist version.');
+        setError(finishTransactionError(err, 'Failed to restore playlist version.'));
       } finally {
         setVersionActionBusy(null);
       }
     },
-    [playlist, restoreVersionAsLatest, versionActionBusy],
+    [
+      beginTransaction,
+      finishTransactionError,
+      finishTransactionSuccess,
+      playlist,
+      restoreVersionAsLatest,
+      versionActionBusy,
+    ],
   );
 
   if (plLoading || !draftInitialized) {
@@ -731,13 +810,10 @@ export default function PlaylistEditorPage() {
       </div>
       {transaction ? (
         <QdnTransactionFlow
-          title="Publish Playlist Version"
+          title={transactionTitle}
           state={transaction}
           onClose={() => setTransaction(null)}
-          onRetry={() => {
-            setTransaction(null);
-            void handlePublish();
-          }}
+          onRetry={() => setTransaction(null)}
         />
       ) : null}
     </PageShell>

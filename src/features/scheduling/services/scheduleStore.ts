@@ -17,6 +17,7 @@ import {
   publishResource,
   searchQdnResources,
 } from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import {
   SCHEDULE_EVENT_IDENTIFIER_PREFIX,
   SCHEDULE_QDN_SERVICE,
@@ -72,24 +73,31 @@ function isMissingResourceError(error: unknown): boolean {
   );
 }
 
-async function persistScheduleEvent(event: ScheduleEvent, ownerName: string): Promise<void> {
+function scheduleEventPublishResource(
+  event: ScheduleEvent,
+  ownerName: string,
+): PublishMultipleResource {
   assertValidScheduleEvent(event);
   const json = serializeScheduleEventForQdn(event);
   const data64 = btoa(unescape(encodeURIComponent(json)));
 
-  await publishResource({
+  return {
     service: SCHEDULE_QDN_SERVICE,
     name: ownerName,
     identifier: getScheduleEventQdnIdentifier(event.eventId),
     data64,
     title: event.title,
-  });
+  };
 }
 
-async function persistScheduleRecurrence(
+async function persistScheduleEvent(event: ScheduleEvent, ownerName: string): Promise<void> {
+  await publishResource(scheduleEventPublishResource(event, ownerName));
+}
+
+function scheduleRecurrencePublishResource(
   recurrence: ScheduleRecurrence,
   ownerName: string,
-): Promise<void> {
+): PublishMultipleResource {
   const validation = validateScheduleRecurrence(recurrence);
   if (!validation.ok) {
     throw new Error(validation.errors[0]);
@@ -98,13 +106,20 @@ async function persistScheduleRecurrence(
   const json = serializeScheduleRecurrenceForQdn(recurrence);
   const data64 = btoa(unescape(encodeURIComponent(json)));
 
-  await publishResource({
+  return {
     service: SCHEDULE_QDN_SERVICE,
     name: ownerName,
     identifier: getScheduleRecurrenceQdnIdentifier(recurrence.recurrenceId),
     data64,
     title: recurrence.title,
-  });
+  };
+}
+
+async function persistScheduleRecurrence(
+  recurrence: ScheduleRecurrence,
+  ownerName: string,
+): Promise<void> {
+  await publishResource(scheduleRecurrencePublishResource(recurrence, ownerName));
 }
 
 async function persistScheduleDelete(identifier: string, ownerName: string): Promise<void> {
@@ -219,31 +234,39 @@ export class ScheduleEventMaterializationError extends Error {
   }
 }
 
-function scheduleEventPublishResource(event: ScheduleEvent, ownerName: string) {
-  assertValidScheduleEvent(event);
-  const data64 = btoa(unescape(encodeURIComponent(serializeScheduleEventForQdn(event))));
-
-  return {
-    service: SCHEDULE_QDN_SERVICE,
-    name: ownerName,
-    identifier: getScheduleEventQdnIdentifier(event.eventId),
-    data64,
-    title: event.title,
-  };
-}
-
 async function publishScheduleEventBatch(
   events: readonly ScheduleEvent[],
   ownerName: string,
-): Promise<ScheduleEventBatchResult> {
+  extraResources: readonly PublishMultipleResource[] = [],
+): Promise<
+  ScheduleEventBatchResult & {
+    extraPublishedIdentifiers: string[];
+    extraFailures: Array<{
+      error: string;
+      resource: {
+        identifier: string | null;
+        name: string;
+        service: string;
+      };
+    }>;
+  }
+> {
   if (events.length === 0) {
-    return { status: 'all-published', publishedEvents: [], failedEvents: [], failures: [] };
+    return {
+      status: 'all-published',
+      publishedEvents: [],
+      failedEvents: [],
+      failures: [],
+      extraPublishedIdentifiers: [],
+      extraFailures: [],
+    };
   }
 
   const resources = events.map((event) => scheduleEventPublishResource(event, ownerName));
+  const allResources = [...extraResources, ...resources];
   let response: Awaited<ReturnType<typeof publishMultipleResources>>;
   try {
-    response = await publishMultipleResources(resources);
+    response = await publishMultipleResources(allResources);
   } catch (error) {
     return {
       status: 'failed',
@@ -254,6 +277,8 @@ async function publishScheduleEventBatch(
         identifier: getScheduleEventQdnIdentifier(event.eventId),
         error: error instanceof Error ? error.message : 'QDN batch publication failed.',
       })),
+      extraPublishedIdentifiers: [],
+      extraFailures: [],
     };
   }
 
@@ -267,6 +292,8 @@ async function publishScheduleEventBatch(
         identifier: getScheduleEventQdnIdentifier(event.eventId),
         error: 'QDN batch publication was not accepted.',
       })),
+      extraPublishedIdentifiers: [],
+      extraFailures: [],
     };
   }
 
@@ -279,6 +306,12 @@ async function publishScheduleEventBatch(
   const publishedEvents: ScheduleEvent[] = [];
   const failedEvents: ScheduleEvent[] = [];
   const failures: ScheduleBatchFailure[] = [];
+  const extraPublishedIdentifiers = extraResources
+    .filter((resource) => publishedByIdentifier.has(resource.identifier ?? ''))
+    .map((resource) => resource.identifier ?? '');
+  const extraFailures = response.failures.filter((entry) =>
+    extraResources.some((resource) => resource.identifier === entry.resource.identifier),
+  );
 
   for (const event of events) {
     const identifier = getScheduleEventQdnIdentifier(event.eventId);
@@ -298,14 +331,35 @@ async function publishScheduleEventBatch(
   }
 
   if (publishedEvents.length === events.length) {
-    return { status: 'all-published', publishedEvents, failedEvents, failures };
+    return {
+      status: 'all-published',
+      publishedEvents,
+      failedEvents,
+      failures,
+      extraPublishedIdentifiers,
+      extraFailures,
+    };
   }
 
   if (publishedEvents.length === 0) {
-    return { status: 'failed', publishedEvents, failedEvents, failures };
+    return {
+      status: 'failed',
+      publishedEvents,
+      failedEvents,
+      failures,
+      extraPublishedIdentifiers,
+      extraFailures,
+    };
   }
 
-  return { status: 'partial', publishedEvents, failedEvents, failures };
+  return {
+    status: 'partial',
+    publishedEvents,
+    failedEvents,
+    failures,
+    extraPublishedIdentifiers,
+    extraFailures,
+  };
 }
 
 // ── Subscriptions and getters ──────────────────────────────────────
@@ -755,6 +809,7 @@ async function reconcileRecurrenceEvents(
   recurrence: ScheduleRecurrence,
   ownerName: string,
   nowUtcMs: number,
+  extraResources: readonly PublishMultipleResource[] = [],
 ): Promise<ScheduleRecurrenceApplyResult> {
   const compileResult = compileScheduleRecurrence(recurrence, nowUtcMs);
 
@@ -791,7 +846,7 @@ async function reconcileRecurrenceEvents(
     }
   }
 
-  const batch = await publishScheduleEventBatch(eventsToPublish, ownerName);
+  const batch = await publishScheduleEventBatch(eventsToPublish, ownerName, extraResources);
   const publishedIds = new Set(batch.publishedEvents.map((event) => event.eventId));
   const targetIds = new Set(targetEvents.map((event) => event.eventId));
 

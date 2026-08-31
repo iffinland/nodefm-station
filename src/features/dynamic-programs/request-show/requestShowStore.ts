@@ -584,6 +584,60 @@ export async function materializeRequestShowOccurrenceBatchAction(
   return result;
 }
 
+/**
+ * Materialize Request Show occurrences for several potentially different
+ * definitions in one coordinated QDN publication request.
+ */
+export async function materializeRequestShowOccurrenceBatchForDefinitions(
+  entries: readonly {
+    scheduleEvent: ScheduleEvent;
+    definition: DynamicProgramDefinition;
+  }[],
+  eligibleTracks: readonly Track[],
+  rankedLikedTracks: readonly RankedLikedTrack[],
+  generatedAt: string,
+  ownerName: string,
+  options: { reuseExisting?: boolean } = {},
+): Promise<RequestShowOccurrenceBatchResult> {
+  const occurrencesToPublish: DynamicProgramOccurrence[] = [];
+
+  for (const entry of entries) {
+    const existing = getRequestShowOccurrenceByScheduleEventId(entry.scheduleEvent.eventId);
+    if (existing && options.reuseExisting !== false) {
+      continue;
+    }
+
+    const generation = generateRequestShowOccurrence(
+      entry.scheduleEvent,
+      entry.definition,
+      eligibleTracks,
+      rankedLikedTracks,
+      generatedAt,
+    );
+
+    if (!generation.ok) {
+      throw new Error(generation.message);
+    }
+
+    occurrencesToPublish.push(generation.occurrence);
+  }
+
+  const result = await publishRequestShowOccurrencesBatch(occurrencesToPublish, ownerName);
+  const publishedById = new Set(
+    result.publishedOccurrences.map((occurrence) => occurrence.scheduleEventId),
+  );
+
+  requestShowOccurrences = [
+    ...requestShowOccurrences.filter(
+      (occurrence) => !publishedById.has(occurrence.scheduleEventId),
+    ),
+    ...result.publishedOccurrences,
+  ];
+  notify();
+
+  return result;
+}
+
 export function resetRequestShowStore(): void {
   requestShowDefinitions = [];
   requestShowOccurrences = [];

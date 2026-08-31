@@ -21,14 +21,20 @@ import {
   ensureQdnResourceReady,
   fetchQdnResourceData,
   getQdnResourceUrl,
+  publishMultipleResources,
   publishResource,
   searchQdnResources,
   type SelectPublishSourceResult,
 } from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import { resolveNameWalletAddress } from '../../../qortium/identity';
 import { resolveAudioDurationFromUrl } from '../../../utils/duration';
 import { isConfirmedQdnNotFoundError } from '../../../qortium/qdnReadError';
-import { addTrackToLibrary, getTrackById } from '../../library/services/libraryService';
+import {
+  getTrackById,
+  trackPublishResource,
+  upsertTrackLocally,
+} from '../../library/services/libraryService';
 import { createTrack } from '../../tracks/services/trackService';
 import {
   isValidReleaseDateValue,
@@ -327,54 +333,62 @@ export async function publishListenerSubmission(
     name: input.submitterName.trim(),
     identifier: audioIdentifier,
   };
-
-  try {
-    const audioResult = await publishResource({
-      service: 'AUDIO',
-      name: input.submitterName.trim(),
-      identifier: audioIdentifier,
-      sourceToken: input.audioSource.sourceToken,
-      title: input.title.trim(),
-      filename: input.audioSource.fileName,
-    });
-
-    if (!audioResult.accepted) {
-      return {
-        status: 'failed',
-        reason: 'Audio publication was not accepted.',
-      };
-    }
-  } catch (publishError) {
-    return {
-      status: 'failed',
-      reason: publishError instanceof Error ? publishError.message : 'Audio publication failed.',
-    };
-  }
-
+  const audioResource: PublishMultipleResource = {
+    service: 'AUDIO',
+    name: input.submitterName.trim(),
+    identifier: audioIdentifier,
+    sourceToken: input.audioSource.sourceToken,
+    title: input.title.trim(),
+    filename: input.audioSource.fileName,
+  };
   let coverRef: QdnResourceRef | undefined;
-
-  if (input.cover) {
-    try {
-      const coverIdentifier = getSubmissionCoverQdnIdentifier(input.submissionId);
-      const coverResult = await publishResource({
+  const coverIdentifier = input.cover
+    ? getSubmissionCoverQdnIdentifier(input.submissionId)
+    : undefined;
+  const coverResource: PublishMultipleResource | undefined = input.cover
+    ? {
         service: 'IMAGE',
         name: input.submitterName.trim(),
-        identifier: coverIdentifier,
+        identifier: coverIdentifier!,
         data64: input.cover.data64,
         title: `${input.title.trim()} cover`,
         filename: input.cover.fileName,
-      });
+      }
+    : undefined;
 
-      if (coverResult.accepted) {
+  try {
+    const mediaResources = coverResource ? [audioResource, coverResource] : [audioResource];
+    const mediaResponse = await publishMultipleResources(mediaResources);
+    const audioPublished =
+      mediaResponse.accepted &&
+      mediaResponse.published.some((entry) => entry.resource.identifier === audioIdentifier);
+
+    if (!audioPublished) {
+      return {
+        status: 'failed',
+        reason:
+          mediaResponse.failures.find((entry) => entry.resource.identifier === audioIdentifier)
+            ?.error ?? 'Audio publication was not accepted.',
+      };
+    }
+
+    if (coverResource && coverIdentifier) {
+      const coverPublished = mediaResponse.published.some(
+        (entry) => entry.resource.identifier === coverIdentifier,
+      );
+      if (coverPublished) {
         coverRef = {
           service: 'IMAGE',
           name: input.submitterName.trim(),
           identifier: coverIdentifier,
         };
       }
-    } catch {
-      // A cover failure is non-fatal. The already-published audio remains intact.
     }
+  } catch (publishError) {
+    return {
+      status: 'failed',
+      reason: publishError instanceof Error ? publishError.message : 'Audio publication failed.',
+    };
   }
 
   let durationMs: number | null = null;
@@ -827,6 +841,19 @@ function publishModeration(
   });
 }
 
+function submissionModerationPublishResource(
+  moderation: SubmissionModeration,
+  stationPublisherName: string,
+): PublishMultipleResource {
+  return {
+    service: SUBMISSION_QDN_SERVICE,
+    name: stationPublisherName.trim(),
+    identifier: getSubmissionModerationQdnIdentifier(moderation.submissionId),
+    data64: btoa(unescape(encodeURIComponent(serializeSubmissionModerationForQdn(moderation)))),
+    title: `Listener submission ${moderation.decision}`,
+  };
+}
+
 export async function acceptSubmission(
   review: ListenerSubmissionReview,
   stationPublisherName: string,
@@ -890,18 +917,6 @@ export async function acceptSubmission(
     submissionRef,
   });
 
-  try {
-    if (!getTrackById(track.trackId)) {
-      await addTrackToLibrary(track, stationPublisherName.trim());
-    }
-  } catch (trackError) {
-    throw new Error(
-      `Failed to publish accepted Station Track: ${
-        trackError instanceof Error ? trackError.message : 'Unknown error'
-      }`,
-    );
-  }
-
   const moderation = createSubmissionModeration({
     moderationId: submission.submissionId,
     submissionId: submission.submissionId,
@@ -911,16 +926,64 @@ export async function acceptSubmission(
     moderatorAddress: ownerAddress,
   });
 
+  const resources: PublishMultipleResource[] = [];
+  const trackAlreadyPresent = Boolean(getTrackById(track.trackId));
+  const trackResource = trackPublishResource(track, stationPublisherName.trim());
+  const trackIdentifier = trackResource.identifier;
+
+  if (!trackAlreadyPresent) {
+    resources.push(trackResource);
+  }
+  resources.push(submissionModerationPublishResource(moderation, stationPublisherName));
+
   try {
-    await publishModeration(moderation, stationPublisherName);
+    const response = await publishMultipleResources(resources);
+    const moderationIdentifier = getSubmissionModerationQdnIdentifier(moderation.submissionId);
+    const moderationPublished = response.accepted
+      ? response.published.some((entry) => entry.resource.identifier === moderationIdentifier)
+      : false;
+    const trackPublished = trackAlreadyPresent
+      ? true
+      : response.accepted
+        ? response.published.some((entry) => entry.resource.identifier === trackIdentifier)
+        : false;
+
+    if (!trackPublished) {
+      const trackFailure = response.failures.find(
+        (entry) => entry.resource.identifier === trackIdentifier,
+      );
+      throw new Error(
+        `Failed to publish accepted Station Track: ${
+          trackFailure?.error ?? 'QDN batch publication returned no result for the track.'
+        }`,
+      );
+    }
+
+    if (!moderationPublished) {
+      const moderationFailure = response.failures.find(
+        (entry) => entry.resource.identifier === moderationIdentifier,
+      );
+      throw new SubmissionModerationWriteError(
+        `Station Track was published, but moderation publication failed: ${
+          moderationFailure?.error ??
+          'QDN batch publication returned no result for the moderation record.'
+        }`,
+        track,
+      );
+    }
   } catch (moderationError) {
-    throw new SubmissionModerationWriteError(
-      `Station Track was published, but moderation publication failed: ${
+    if (moderationError instanceof SubmissionModerationWriteError) {
+      throw moderationError;
+    }
+
+    throw new Error(
+      `Failed to publish accepted Station Track: ${
         moderationError instanceof Error ? moderationError.message : 'Unknown error'
       }`,
-      track,
     );
   }
+
+  upsertTrackLocally(track);
 
   if (scope === moderationScope) {
     reviews = reviews.map((entry) =>

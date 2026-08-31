@@ -11,6 +11,7 @@ vi.mock('../qortium/qdn', () => ({
   ensureQdnResourceReady: vi.fn(),
   fetchQdnResourceData: vi.fn(),
   getQdnResourceUrl: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   searchQdnResources: vi.fn(),
 }));
@@ -20,8 +21,9 @@ vi.mock('../qortium/identity', () => ({
 }));
 
 vi.mock('../features/library/services/libraryService', () => ({
-  addTrackToLibrary: vi.fn(),
   getTrackById: vi.fn(),
+  trackPublishResource: vi.fn(),
+  upsertTrackLocally: vi.fn(),
 }));
 
 vi.mock('../utils/duration', async () => {
@@ -37,11 +39,16 @@ import {
   ensureQdnResourceReady,
   fetchQdnResourceData,
   getQdnResourceUrl,
+  publishMultipleResources,
   publishResource,
   searchQdnResources,
 } from '../qortium/qdn';
 import { resolveNameWalletAddress } from '../qortium/identity';
-import { addTrackToLibrary, getTrackById } from '../features/library/services/libraryService';
+import {
+  getTrackById,
+  trackPublishResource,
+  upsertTrackLocally,
+} from '../features/library/services/libraryService';
 import { resolveAudioDurationFromUrl } from '../utils/duration';
 import {
   acceptSubmission,
@@ -64,13 +71,15 @@ import {
 import type { SelectPublishSourceResult } from '../qortium/qdn';
 
 const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedSearch = vi.mocked(searchQdnResources);
 const mockedFetch = vi.mocked(fetchQdnResourceData);
 const mockedEnsureReady = vi.mocked(ensureQdnResourceReady);
 const mockedGetUrl = vi.mocked(getQdnResourceUrl);
 const mockedResolveDuration = vi.mocked(resolveAudioDurationFromUrl);
 const mockedResolveName = vi.mocked(resolveNameWalletAddress);
-const mockedAddTrack = vi.mocked(addTrackToLibrary);
+const mockedTrackPublishResource = vi.mocked(trackPublishResource);
+const mockedUpsertTrack = vi.mocked(upsertTrackLocally);
 const mockedGetTrack = vi.mocked(getTrackById);
 
 const OWNER_ADDRESS = 'Q-owner';
@@ -122,6 +131,7 @@ function searchResult(listener: string, identifier: string, created: number) {
 describe('publishListenerSubmission', () => {
   beforeEach(() => {
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedEnsureReady.mockReset();
     mockedGetUrl.mockReset();
     mockedResolveDuration.mockReset();
@@ -131,14 +141,24 @@ describe('publishListenerSubmission', () => {
     mockedEnsureReady.mockResolvedValue(undefined);
     mockedGetUrl.mockResolvedValue('https://node.example/audio');
     mockedResolveDuration.mockResolvedValue(123456);
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
   });
 
   it('publishes listener-owned audio first and only then submission metadata', async () => {
-    mockedPublish.mockImplementation(async (input) => {
-      if (input.service === 'AUDIO') {
-        return publishedResult('nodefm-submission-audio-1', 'listener-a', 'AUDIO');
-      }
-
+    mockedPublish.mockImplementation(async () => {
       return publishedResult('nodefm-track-submission-1', 'listener-a');
     });
 
@@ -157,25 +177,23 @@ describe('publishListenerSubmission', () => {
     });
 
     expect(result.status).toBe('published');
-    expect(mockedPublish.mock.calls.map(([call]) => call.service)).toEqual(['AUDIO', 'JSON']);
+    expect(mockedBatchPublish).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          service: 'AUDIO',
+          name: LISTENER_A,
+          identifier: getSubmissionAudioQdnIdentifier(SUBMISSION_ID),
+          sourceToken: 'token-1',
+        }),
+      ]),
+    );
     expect(mockedPublish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        service: 'AUDIO',
-        name: LISTENER_A,
-        identifier: getSubmissionAudioQdnIdentifier(SUBMISSION_ID),
-        sourceToken: 'token-1',
-      }),
+      expect.objectContaining({ service: 'JSON', name: LISTENER_A }),
     );
   });
 
   it('publishes an optional cover under the listener name', async () => {
-    mockedPublish.mockImplementation(async (input) => {
-      if (input.service === 'AUDIO') {
-        return publishedResult('nodefm-submission-audio-1', LISTENER_A, 'AUDIO');
-      }
-      if (input.service === 'IMAGE') {
-        return publishedResult('nodefm-submission-cover-1', LISTENER_A, 'IMAGE');
-      }
+    mockedPublish.mockImplementation(async () => {
       return publishedResult('nodefm-track-submission-1', LISTENER_A);
     });
 
@@ -195,6 +213,12 @@ describe('publishListenerSubmission', () => {
     });
 
     expect(result.status).toBe('published');
+    expect(mockedBatchPublish).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ service: 'AUDIO', name: LISTENER_A }),
+        expect.objectContaining({ service: 'IMAGE', name: LISTENER_A }),
+      ]),
+    );
     if (result.status === 'published') {
       expect(result.submission.cover).toEqual({
         service: 'IMAGE',
@@ -205,9 +229,6 @@ describe('publishListenerSubmission', () => {
   });
 
   it('returns partial state and never publishes metadata when duration is invalid', async () => {
-    mockedPublish.mockResolvedValue(
-      publishedResult(getSubmissionAudioQdnIdentifier(SUBMISSION_ID), LISTENER_A, 'AUDIO'),
-    );
     mockedResolveDuration.mockResolvedValue(0);
 
     const result = await publishListenerSubmission({
@@ -225,15 +246,12 @@ describe('publishListenerSubmission', () => {
     });
 
     expect(result.status).toBe('partial');
-    expect(mockedPublish).toHaveBeenCalledTimes(1);
-    expect(mockedPublish).toHaveBeenCalledWith(expect.objectContaining({ service: 'AUDIO' }));
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    expect(mockedPublish).not.toHaveBeenCalled();
   });
 
   it('preserves a retryable submission draft when metadata publication fails', async () => {
-    mockedPublish.mockImplementation(async (input) => {
-      if (input.service === 'AUDIO') {
-        return publishedResult(getSubmissionAudioQdnIdentifier(SUBMISSION_ID), LISTENER_A, 'AUDIO');
-      }
+    mockedPublish.mockImplementation(async () => {
       throw new Error('metadata rejected');
     });
 
@@ -252,6 +270,8 @@ describe('publishListenerSubmission', () => {
     });
 
     expect(result.status).toBe('partial');
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    expect(mockedPublish).toHaveBeenCalledTimes(1);
     if (result.status === 'partial') {
       expect(result.audio).toBeTruthy();
       expect(result.submissionDraft?.title).toBe('Retry Me');
@@ -499,9 +519,32 @@ describe('owner moderation', () => {
     mockedFetch.mockReset();
     mockedResolveName.mockReset();
     mockedPublish.mockReset();
-    mockedAddTrack.mockReset();
+    mockedBatchPublish.mockReset();
+    mockedTrackPublishResource.mockReset();
+    mockedUpsertTrack.mockReset();
     mockedGetTrack.mockReset();
     mockedResolveName.mockResolvedValue(LISTENER_A_ADDRESS);
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
+    mockedTrackPublishResource.mockImplementation((track, ownerName) => ({
+      service: 'JSON',
+      name: ownerName,
+      identifier: `nodefm-track-${track.trackId}`,
+      data64: 'dHJhY2s=',
+      title: track.title,
+    }));
 
     mockedSearch.mockResolvedValue([
       searchResult(LISTENER_A, getSubmissionQdnIdentifier(SUBMISSION_ID), 1),
@@ -520,34 +563,24 @@ describe('owner moderation', () => {
   }
 
   it('allows the owner to accept and creates a normal Station Track with external audio ref', async () => {
-    mockedPublish.mockResolvedValue(
-      publishedResult(getSubmissionModerationQdnIdentifier(SUBMISSION_ID), STATION_NAME),
-    );
-
     const review = await loadPending();
     const result = await acceptSubmission(review, STATION_NAME, OWNER_ADDRESS, OWNER_ADDRESS);
 
     expect(result.status).toBe('accepted');
-    expect(mockedAddTrack).toHaveBeenCalledWith(
-      expect.objectContaining({
-        trackId: `sub-${SUBMISSION_ID}`,
-        audio: {
-          service: 'AUDIO',
-          name: LISTENER_A,
-          identifier: getSubmissionAudioQdnIdentifier(SUBMISSION_ID),
-        },
-        source: 'qdn-existing',
-        ownerAddress: OWNER_ADDRESS,
-        submissionId: SUBMISSION_ID,
-      }),
-      STATION_NAME,
-    );
-    expect(mockedPublish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        service: 'JSON',
-        name: STATION_NAME,
-        identifier: getSubmissionModerationQdnIdentifier(SUBMISSION_ID),
-      }),
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    expect(mockedBatchPublish.mock.calls[0][0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          service: 'JSON',
+          name: STATION_NAME,
+          identifier: `nodefm-track-sub-${SUBMISSION_ID}`,
+        }),
+        expect.objectContaining({
+          service: 'JSON',
+          name: STATION_NAME,
+          identifier: getSubmissionModerationQdnIdentifier(SUBMISSION_ID),
+        }),
+      ]),
     );
     expect(getSubmissionReviews()[0].status).toBe('ACCEPTED');
   });
@@ -558,7 +591,7 @@ describe('owner moderation', () => {
     await expect(
       acceptSubmission(review, STATION_NAME, 'Q-mallory', OWNER_ADDRESS),
     ).rejects.toThrow(/Only the station owner/);
-    expect(mockedAddTrack).not.toHaveBeenCalled();
+    expect(mockedBatchPublish).not.toHaveBeenCalled();
     expect(mockedPublish).not.toHaveBeenCalled();
   });
 
@@ -590,10 +623,6 @@ describe('owner moderation', () => {
   });
 
   it('does not create a duplicate Station Track on repeated Accept', async () => {
-    mockedPublish.mockResolvedValue(
-      publishedResult(getSubmissionModerationQdnIdentifier(SUBMISSION_ID), STATION_NAME),
-    );
-
     const review = await loadPending();
     const first = await acceptSubmission(review, STATION_NAME, OWNER_ADDRESS, OWNER_ADDRESS);
     mockedGetTrack.mockReturnValue(first.status === 'accepted' ? first.track : undefined);
@@ -607,24 +636,47 @@ describe('owner moderation', () => {
     );
 
     expect(second.status).toBe('already-accepted');
-    expect(mockedAddTrack).toHaveBeenCalledTimes(1);
-    expect(mockedPublish).toHaveBeenCalledTimes(1);
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    expect(mockedUpsertTrack).toHaveBeenCalledTimes(1);
   });
 
   it('failed Track publication does not become accepted', async () => {
-    mockedAddTrack.mockRejectedValue(new Error('track publish failed'));
+    mockedBatchPublish.mockRejectedValue(new Error('track publish failed'));
 
     const review = await loadPending();
     await expect(
       acceptSubmission(review, STATION_NAME, OWNER_ADDRESS, OWNER_ADDRESS),
     ).rejects.toThrow(/Failed to publish accepted Station Track/);
 
-    expect(mockedPublish).not.toHaveBeenCalled();
     expect(getSubmissionReviews()[0].status).toBe('PENDING');
   });
 
   it('failed moderation write does not become accepted or rejected', async () => {
-    mockedPublish.mockRejectedValue(new Error('moderation publish failed'));
+    mockedBatchPublish.mockResolvedValue({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: [
+        {
+          result: {},
+          resource: {
+            identifier: `nodefm-track-sub-${SUBMISSION_ID}`,
+            name: STATION_NAME,
+            service: 'JSON',
+          },
+          transactionSignature: 'signature',
+        },
+      ],
+      failures: [
+        {
+          error: 'moderation publish failed',
+          resource: {
+            identifier: getSubmissionModerationQdnIdentifier(SUBMISSION_ID),
+            name: STATION_NAME,
+            service: 'JSON',
+          },
+        },
+      ],
+    });
 
     const review = await loadPending();
     await expect(

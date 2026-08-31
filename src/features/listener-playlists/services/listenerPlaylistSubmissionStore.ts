@@ -8,9 +8,17 @@
  * ============================================================ */
 
 import type { Playlist, PlaylistVersion, PlaylistVersionTrack } from '../../../types/domain';
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../../../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishMultipleResources,
+  publishResource,
+  searchQdnResources,
+} from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import { isConfirmedQdnNotFoundError } from '../../../qortium/qdnReadError';
 import {
+  createPlaylist,
+  createPlaylistVersion,
   deserializePlaylistFromQdn,
   deserializePlaylistVersionFromQdn,
 } from '../../playlists/services/playlistService';
@@ -18,7 +26,12 @@ import {
   getListenerPlaylistQdnIdentifier,
   getListenerPlaylistVersionQdnIdentifier,
 } from './listenerPlaylistService';
-import { addPlaylist, publishPlaylistVersion } from '../../playlists/services/playlistStore';
+import {
+  addPlaylistToLocalStore,
+  addPlaylistVersionToLocalStore,
+  playlistPublishResource,
+  playlistVersionPublishResource,
+} from '../../playlists/services/playlistStore';
 import { getTrackById } from '../../library/services/libraryService';
 import {
   deserializeSubmissionFromQdn,
@@ -525,32 +538,31 @@ export async function acceptListenerPlaylistSubmission(
     ownerAddress,
   );
 
-  const importedPlaylist = await addPlaylist(
-    {
-      title: listenerPlaylist.title,
-      description: listenerPlaylist.description
-        ? `${listenerPlaylist.description}\n\nSubmitted by ${review.submission.listenerName}.`
-        : `Submitted by ${review.submission.listenerName}.`,
-      visibility: 'private',
-      ownerAddress,
-    },
-    stationPublisherName,
-  );
+  const importedPlaylist = createPlaylist({
+    title: listenerPlaylist.title,
+    description: listenerPlaylist.description
+      ? `${listenerPlaylist.description}\n\nSubmitted by ${review.submission.listenerName}.`
+      : `Submitted by ${review.submission.listenerName}.`,
+    visibility: 'private',
+    ownerAddress,
+  });
 
-  const published = await publishPlaylistVersion(
-    {
-      playlistId: importedPlaylist.playlistId,
-      createdBy: ownerAddress,
-      tracks: stationTracks,
-    },
-    stationPublisherName,
-  );
+  const versionResult = createPlaylistVersion({
+    playlistId: importedPlaylist.playlistId,
+    createdBy: ownerAddress,
+    tracks: stationTracks,
+  });
 
-  if (!published.ok || !('version' in published)) {
-    throw new Error(published.ok ? 'Failed to create station playlist version.' : published.error);
+  if (!versionResult.ok) {
+    throw new Error(versionResult.error);
   }
 
-  const version = published.version;
+  const version = versionResult.version;
+  const finalPlaylist: Playlist = {
+    ...importedPlaylist,
+    latestVersionId: version.versionId,
+    updatedAt: new Date().toISOString(),
+  };
   const moderation = createListenerPlaylistSubmissionModeration({
     moderationId: review.submission.submissionId,
     submissionId: review.submission.submissionId,
@@ -565,7 +577,7 @@ export async function acceptListenerPlaylistSubmission(
     moderatorAddress: ownerAddress,
   });
 
-  await publishResource({
+  const moderationResource: PublishMultipleResource = {
     service: 'JSON',
     name: stationPublisherName.trim(),
     identifier: getListenerPlaylistSubmissionModerationQdnIdentifier(
@@ -575,7 +587,64 @@ export async function acceptListenerPlaylistSubmission(
       unescape(encodeURIComponent(serializeListenerPlaylistSubmissionModeration(moderation))),
     ),
     title: `Playlist submission accepted: ${review.submission.playlistTitle}`,
-  });
+  };
+
+  const resources: PublishMultipleResource[] = [
+    playlistVersionPublishResource(version, stationPublisherName.trim()),
+    playlistPublishResource(finalPlaylist, stationPublisherName.trim()),
+    moderationResource,
+  ];
+  const versionIdentifier = playlistVersionPublishResource(
+    version,
+    stationPublisherName.trim(),
+  ).identifier;
+  const playlistIdentifier = playlistPublishResource(
+    finalPlaylist,
+    stationPublisherName.trim(),
+  ).identifier;
+  const moderationIdentifier = moderationResource.identifier;
+
+  const response = await publishMultipleResources(resources);
+  const versionPublished = response.accepted
+    ? response.published.some((entry) => entry.resource.identifier === versionIdentifier)
+    : false;
+  const playlistPublished = response.accepted
+    ? response.published.some((entry) => entry.resource.identifier === playlistIdentifier)
+    : false;
+  const moderationPublished = response.accepted
+    ? response.published.some((entry) => entry.resource.identifier === moderationIdentifier)
+    : false;
+
+  if (!versionPublished || !playlistPublished) {
+    const versionFailure = response.failures.find(
+      (entry) => entry.resource.identifier === versionIdentifier,
+    );
+    const playlistFailure = response.failures.find(
+      (entry) => entry.resource.identifier === playlistIdentifier,
+    );
+    throw new Error(
+      `Failed to import listener playlist: ${
+        versionFailure?.error ??
+        playlistFailure?.error ??
+        'QDN batch publication returned an incomplete result.'
+      }`,
+    );
+  }
+
+  if (!moderationPublished) {
+    const moderationFailure = response.failures.find(
+      (entry) => entry.resource.identifier === moderationIdentifier,
+    );
+    throw new Error(
+      `Playlist was imported, but moderation publication failed: ${
+        moderationFailure?.error ??
+        'QDN batch publication returned no result for the moderation record.'
+      }`,
+    );
+  }
+
+  addPlaylistToLocalStore(finalPlaylist);
+  addPlaylistVersionToLocalStore(finalPlaylist.playlistId, version);
 
   if (scope === scopeKey(stationPublisherName, ownerAddress)) {
     reviews = reviews.map((entry) =>
@@ -587,7 +656,7 @@ export async function acceptListenerPlaylistSubmission(
     notify();
   }
 
-  return { status: 'accepted', playlist: importedPlaylist, version, moderation };
+  return { status: 'accepted', playlist: finalPlaylist, version, moderation };
 }
 
 export async function rejectListenerPlaylistSubmission(

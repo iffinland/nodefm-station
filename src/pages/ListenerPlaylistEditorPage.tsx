@@ -14,12 +14,10 @@ import { PageShell } from '../components/PageShell';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { Modal } from '../components/Modal';
-import { QdnTransactionFlow } from '../components/QdnTransactionFlow';
 import {
-  createQdnTransactionState,
-  markQdnTransactionChunkActive,
-  type QdnTransactionState,
-} from '../components/qdnTransactionFlow';
+  PublicationProgress,
+  type PublicationProgressState,
+} from '../components/PublicationProgress';
 import { useAuth } from '../app/providers/authContext';
 import { useStation } from '../features/station';
 import { useLibrary } from '../hooks/useLibrary';
@@ -88,7 +86,7 @@ export default function ListenerPlaylistEditorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [transaction, setTransaction] = useState<QdnTransactionState | null>(null);
+  const [publishProgress, setPublishProgress] = useState<PublicationProgressState | null>(null);
   const [activeSource, setActiveSource] = useState<
     'station-library' | 'my-uploads' | 'upload-music'
   >('station-library');
@@ -115,7 +113,7 @@ export default function ListenerPlaylistEditorPage() {
     setEditVisibility('private');
     setError(null);
     setSuccess(null);
-    setTransaction(null);
+    setPublishProgress(null);
     setActiveSource('station-library');
     setUploadSearch('');
     setSelectedUploadIds(new Set());
@@ -346,76 +344,48 @@ export default function ListenerPlaylistEditorPage() {
     setSuccess(null);
 
     const latest = getLatestVersion(draft.playlistId);
-    const hasExisting = Boolean(getPlaylist(draft.playlistId));
-    const specs = hasExisting
-      ? [
-          { id: 'version', label: 'Publish immutable playlist version' },
-          { id: 'pointer', label: 'Update playlist pointer' },
-        ]
-      : [
-          { id: 'playlist', label: 'Publish logical playlist' },
-          { id: 'version', label: 'Publish immutable playlist version' },
-          { id: 'pointer', label: 'Update playlist pointer' },
-        ];
+    const rows: PublicationProgressState['rows'] = [
+      { id: 'version', label: 'Playlist version', status: 'active' },
+      { id: 'playlist', label: 'Playlist', status: 'active' },
+    ];
 
-    setTransaction(createQdnTransactionState(specs, { cancelable: false, retryable: true }));
+    setPublishProgress({ phase: 'publishing', rows });
 
-    const result = await publishDraft(draft, publication.tracks, latest, (chunk) => {
-      setTransaction((current) => {
-        if (!current) return current;
-
-        if (chunk === 'prepare') {
-          return current;
-        }
-
-        const mappedChunk = chunk;
-        return markQdnTransactionChunkActive(current, mappedChunk);
-      });
-    });
+    const result = await publishDraft(draft, publication.tracks, latest);
 
     if (result.ok) {
       clearDraft(draft.playlistId);
-      setTransaction((current) => {
+      setPublishProgress((current) => {
         if (!current) return current;
-        const chunks = current.chunks.map((item) => ({
-          ...item,
-          status: 'succeeded' as const,
-        }));
         return {
-          ...current,
-          chunks,
           phase: 'success' as const,
-          successMessage: `Published version ${result.version.versionNumber}.`,
-          retryable: false,
+          rows: current.rows.map((row) => ({
+            ...row,
+            status: 'succeeded' as const,
+            error: undefined,
+          })),
+          error: undefined,
         };
       });
     } else {
-      setTransaction((current) => {
+      const partial = 'partial' in result && result.partial === true;
+      setPublishProgress((current) => {
         if (!current) return current;
-        const chunks = current.chunks.map((item) =>
-          item.status === 'active' ? { ...item, status: 'failed' as const } : item,
-        );
         return {
-          ...current,
-          chunks,
           phase: 'failed' as const,
+          rows: current.rows.map((row) => {
+            if (row.id === 'version' && partial) {
+              return { ...row, status: 'succeeded' as const, error: undefined };
+            }
+            return { ...row, status: 'failed' as const };
+          }),
           error: result.error,
-          retryable: true,
         };
       });
     }
 
     setBusy(false);
-  }, [
-    clearDraft,
-    draft,
-    getLatestVersion,
-    getPlaylist,
-    ownerAddress,
-    ownerName,
-    publication,
-    publishDraft,
-  ]);
+  }, [clearDraft, draft, getLatestVersion, ownerAddress, ownerName, publication, publishDraft]);
 
   const handleSubmitToStation = useCallback(async () => {
     if (!draft || !ownerName || !ownerAddress || !stationSubmission?.eligible) return;
@@ -924,15 +894,12 @@ export default function ListenerPlaylistEditorPage() {
         </Modal>
       )}
 
-      {transaction ? (
-        <QdnTransactionFlow
-          title="Publish Playlist"
-          state={transaction}
-          onClose={() => setTransaction(null)}
-          onRetry={() => {
-            setTransaction(null);
-            void handlePublish();
-          }}
+      {publishProgress ? (
+        <PublicationProgress
+          title={publishProgress.phase === 'success' ? 'Playlist Published' : 'Publishing Playlist'}
+          state={publishProgress}
+          successMessage="Playlist published successfully."
+          onClose={() => setPublishProgress(null)}
         />
       ) : null}
     </PageShell>

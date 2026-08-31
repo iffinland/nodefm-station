@@ -11,11 +11,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../qortium/qdn', () => ({
   searchQdnResources: vi.fn(),
   fetchQdnResourceData: vi.fn(),
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
   deleteQdnResource: vi.fn(),
 }));
 
-import { publishResource, searchQdnResources, fetchQdnResourceData } from '../qortium/qdn';
+import {
+  publishMultipleResources,
+  publishResource,
+  searchQdnResources,
+  fetchQdnResourceData,
+} from '../qortium/qdn';
 import { createTrack } from '../features/tracks/services/trackService';
 import { getTrackQdnIdentifier } from '../features/tracks/services/trackService';
 import {
@@ -37,6 +43,7 @@ import {
 } from '../features/playlists/services/playlistService';
 
 const mockedPublish = vi.mocked(publishResource);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
 const mockedSearch = vi.mocked(searchQdnResources);
 const mockedFetch = vi.mocked(fetchQdnResourceData);
 
@@ -107,9 +114,24 @@ describe('publication identity', () => {
     resetLibrary();
     resetPlaylistStore();
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedSearch.mockReset();
     mockedFetch.mockReset();
     mockedPublish.mockResolvedValue({ accepted: true } as never);
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
   });
 
   it('publishes N tracks with N distinct QDN identifiers', async () => {
@@ -227,9 +249,24 @@ describe('playlist reconstruction', () => {
     resetLibrary();
     resetPlaylistStore();
     mockedPublish.mockReset();
+    mockedBatchPublish.mockReset();
     mockedSearch.mockReset();
     mockedFetch.mockReset();
     mockedPublish.mockResolvedValue({ accepted: true } as never);
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
   });
 
   it('reconstructs every discovered logical playlist', async () => {
@@ -294,13 +331,20 @@ describe('playlist reconstruction', () => {
 
     expect(result.ok).toBe(true);
 
-    const publishCalls = mockedPublish.mock.calls.map(
-      ([call]) =>
-        call as unknown as {
-          service?: string;
-          identifier?: string;
-        },
-    );
+    const publishCalls = [
+      ...mockedPublish.mock.calls.map(
+        ([call]) =>
+          call as unknown as {
+            service?: string;
+            identifier?: string;
+          },
+      ),
+      ...mockedBatchPublish.mock.calls.flatMap(([resources]) =>
+        (resources as unknown as Array<{ service?: string; identifier?: string }>).map(
+          (resource) => resource,
+        ),
+      ),
+    ];
 
     expect(publishCalls).toContainEqual(
       expect.objectContaining({

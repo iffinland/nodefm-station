@@ -2132,6 +2132,74 @@ select {
   font-size: 0.85rem;
 }
 
+/* ── Upload Publication State ─────────────────────────────────────── */
+
+.upload-publication {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.upload-publication__rows {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-publication__row {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr;
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--nf-border);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.upload-publication__status {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  grid-row: 1;
+  font-weight: 700;
+  color: var(--nf-text-muted);
+  min-height: 1.2rem;
+}
+
+.upload-publication__spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(126, 186, 255, 0.16);
+  border-top-color: var(--nf-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.upload-publication__row--active .upload-publication__status {
+  color: var(--nf-cyan);
+}
+
+.upload-publication__row--succeeded .upload-publication__status {
+  color: #5eead4;
+}
+
+.upload-publication__row--failed .upload-publication__status {
+  color: #ff6b6b;
+}
+
+.upload-publication__label {
+  grid-row: 1;
+  font-weight: 650;
+}
+
+.upload-publication__error {
+  grid-column: 2;
+  color: #ff6b6b;
+  font-size: 0.82rem;
+}
+
 /* ── Unified Tags/Genres Suggestion Input ─────────────────────────── */
 
 .taxonomy-field {

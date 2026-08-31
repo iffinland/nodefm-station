@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { publishResource } from '../../../qortium/qdn';
-import { updateTrack } from './libraryService';
+import { publishMultipleResources, publishResource } from '../../../qortium/qdn';
+import { getTrackById, trackPublishResource, upsertTrackLocally } from './libraryService';
 import {
   getCoverSizeError,
   publishAndUpdateTrackCover,
@@ -8,15 +8,21 @@ import {
 } from './coverService';
 
 vi.mock('../../../qortium/qdn', () => ({
+  publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
 }));
 
 vi.mock('./libraryService', () => ({
-  updateTrack: vi.fn(),
+  getTrackById: vi.fn(),
+  trackPublishResource: vi.fn(),
+  upsertTrackLocally: vi.fn(),
 }));
 
 const mockedPublish = vi.mocked(publishResource);
-const mockedUpdateTrack = vi.mocked(updateTrack);
+const mockedBatchPublish = vi.mocked(publishMultipleResources);
+const mockedGetTrack = vi.mocked(getTrackById);
+const mockedTrackPublishResource = vi.mocked(trackPublishResource);
+const mockedUpsertTrack = vi.mocked(upsertTrackLocally);
 
 describe('cover size validation', () => {
   it('rejects files over the 2 MB inline limit', () => {
@@ -79,16 +85,43 @@ describe('publishTrackCoverImage', () => {
 
   it('updates Track metadata only after a successful cover publish', async () => {
     mockedPublish.mockReset();
-    mockedUpdateTrack.mockReset();
-    mockedPublish.mockResolvedValue({
-      accepted: true,
-      action: 'PUBLISH_QDN_RESOURCE',
-      resource: { identifier: 'nodefm-cover-new', name: 'NodeFM', service: 'IMAGE' },
-    } as never);
-    mockedUpdateTrack.mockResolvedValue({
+    mockedBatchPublish.mockReset();
+    mockedGetTrack.mockReset();
+    mockedTrackPublishResource.mockReset();
+    mockedUpsertTrack.mockReset();
+    mockedGetTrack.mockReturnValue({
+      schemaVersion: 1,
       trackId: 'track-1',
-      cover: { service: 'IMAGE', name: 'NodeFM', identifier: 'nodefm-cover-new' },
-    } as never);
+      ownerAddress: 'Q-owner',
+      title: 'Track',
+      audio: { service: 'AUDIO', name: 'NodeFM' },
+      durationMs: 1000,
+      source: 'station-upload',
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+    });
+    mockedTrackPublishResource.mockReturnValue({
+      service: 'JSON',
+      name: 'NodeFM',
+      identifier: 'nodefm-track-track-1',
+      data64: 'dHJhY2s=',
+      title: 'Updated Track',
+    });
+    mockedBatchPublish.mockImplementation(async (resources) => ({
+      accepted: true,
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: resources.map((resource) => ({
+        result: {},
+        resource: {
+          identifier: resource.identifier ?? null,
+          name: resource.name,
+          service: resource.service,
+        },
+        transactionSignature: 'signature',
+      })),
+      failures: [],
+    }));
+    mockedUpsertTrack.mockImplementation((track) => track);
 
     const file = new File(['cover'], 'cover.png', { type: 'image/png' });
 
@@ -101,30 +134,46 @@ describe('publishTrackCoverImage', () => {
       metadata: { title: 'Updated Track' },
     });
 
-    expect(mockedPublish).toHaveBeenCalledTimes(1);
-    expect(mockedUpdateTrack).toHaveBeenCalledTimes(1);
-    expect(mockedUpdateTrack).toHaveBeenCalledWith(
-      'track-1',
-      expect.objectContaining({
-        title: 'Updated Track',
-        cover: {
-          service: 'IMAGE',
-          name: 'NodeFM',
-          identifier: expect.stringMatching(/^nodefm-cover-/),
-        },
-      }),
-      'NodeFM',
+    expect(mockedBatchPublish).toHaveBeenCalledTimes(1);
+    expect(mockedBatchPublish.mock.calls[0][0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ service: 'IMAGE', name: 'NodeFM' }),
+        expect.objectContaining({ service: 'JSON', name: 'NodeFM' }),
+      ]),
     );
+    expect(mockedUpsertTrack).toHaveBeenCalledTimes(1);
   });
 
   it('does not update Track metadata when cover publication fails', async () => {
     mockedPublish.mockReset();
-    mockedUpdateTrack.mockReset();
-    mockedPublish.mockResolvedValue({
+    mockedBatchPublish.mockReset();
+    mockedGetTrack.mockReset();
+    mockedTrackPublishResource.mockReset();
+    mockedUpsertTrack.mockReset();
+    mockedGetTrack.mockReturnValue({
+      schemaVersion: 1,
+      trackId: 'track-1',
+      ownerAddress: 'Q-owner',
+      title: 'Track',
+      audio: { service: 'AUDIO', name: 'NodeFM' },
+      durationMs: 1000,
+      source: 'station-upload',
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+    });
+    mockedTrackPublishResource.mockReturnValue({
+      service: 'JSON',
+      name: 'NodeFM',
+      identifier: 'nodefm-track-track-1',
+      data64: 'dHJhY2s=',
+      title: 'Track',
+    });
+    mockedBatchPublish.mockResolvedValue({
       accepted: false,
-      action: 'PUBLISH_QDN_RESOURCE',
-      resource: { identifier: 'nodefm-cover-new', name: 'NodeFM', service: 'IMAGE' },
-    } as never);
+      action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
+      published: [],
+      failures: [],
+    });
 
     await expect(
       publishAndUpdateTrackCover({
@@ -134,8 +183,8 @@ describe('publishTrackCoverImage', () => {
         file: new File(['cover'], 'cover.png', { type: 'image/png' }),
         data64: 'aGVsbG8=',
       }),
-    ).rejects.toThrow(/not accepted/i);
+    ).rejects.toThrow(/Failed to save track cover/);
 
-    expect(mockedUpdateTrack).not.toHaveBeenCalled();
+    expect(mockedUpsertTrack).not.toHaveBeenCalled();
   });
 });

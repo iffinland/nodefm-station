@@ -11,10 +11,12 @@
 import type { Track } from '../../../types/domain';
 import {
   publishResource,
+  publishMultipleResources,
   fetchQdnResourceData,
   searchQdnResources,
   deleteQdnResource,
 } from '../../../qortium/qdn';
+import type { PublishMultipleResource } from '../../../qortium/qdn';
 import {
   serializeTrackForQdn,
   deserializeTrackFromQdn,
@@ -70,10 +72,14 @@ const TRACK_SERVICE = 'JSON';
 const TRACK_IDENTIFIER_PREFIX = 'nodefm-track-';
 
 async function persistTrack(track: Track, ownerName: string): Promise<void> {
+  await publishResource(trackPublishResource(track, ownerName));
+}
+
+export function trackPublishResource(track: Track, ownerName: string): PublishMultipleResource {
   const json = serializeTrackForQdn(track);
   const base64 = btoa(unescape(encodeURIComponent(json)));
 
-  await publishResource({
+  return {
     service: TRACK_SERVICE,
     name: ownerName,
     identifier: getTrackQdnIdentifier(track.trackId),
@@ -81,7 +87,17 @@ async function persistTrack(track: Track, ownerName: string): Promise<void> {
     title: track.title,
     description: track.description,
     tags: track.tags,
-  });
+  };
+}
+
+export async function publishTrackResources(
+  resources: readonly PublishMultipleResource[],
+): Promise<Awaited<ReturnType<typeof publishMultipleResources>>> {
+  if (resources.length === 0) {
+    throw new Error('At least one track resource is required.');
+  }
+
+  return publishMultipleResources(resources);
 }
 
 async function fetchTrackFromQdn(ownerName: string, trackId: string): Promise<Track> {
@@ -366,6 +382,19 @@ export async function removeTrackFromLibrary(trackId: string, ownerName: string)
  */
 export function getTrackById(trackId: string): Track | undefined {
   return libraryTracks.find((t) => t.trackId === trackId);
+}
+
+export function upsertTrackLocally(track: Track): Track {
+  const index = libraryTracks.findIndex((candidate) => candidate.trackId === track.trackId);
+
+  if (index === -1) {
+    libraryTracks = [...libraryTracks, track];
+  } else {
+    libraryTracks = [...libraryTracks.slice(0, index), track, ...libraryTracks.slice(index + 1)];
+  }
+
+  notifyListeners();
+  return track;
 }
 
 /**
