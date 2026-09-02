@@ -455,8 +455,9 @@ export function requireQdnResourceUrl(value: unknown): string {
 }
 
 /**
- * Get a playable URL for a QDN resource.
- * Essential for the audio engine to play QDN-hosted tracks.
+ * Get the ordinary render URL for a QDN resource.
+ * Media playback should use getQdnResourceStreamUrl() instead so Home can
+ * provide the platform-appropriate ranged stream transport.
  */
 export async function getQdnResourceUrl(ref: QdnResourceRef): Promise<string> {
   const result = await sendBridgeRequest({
@@ -467,6 +468,33 @@ export async function getQdnResourceUrl(ref: QdnResourceRef): Promise<string> {
   });
 
   return requireQdnResourceUrl(result);
+}
+
+/** Validate the current Qortium Home media stream URL contract. */
+export function requireQdnResourceStreamUrl(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('GET_QDN_RESOURCE_STREAM_URL did not return a resource URL string.');
+  }
+
+  return value;
+}
+
+/**
+ * Get an opaque, ranged media URL for a QDN resource.
+ *
+ * Home returns the appropriate transport for its host platform: desktop can
+ * use its normal media route while Android uses Home's authorized HTTPS QDN
+ * proxy. Callers must treat the returned URL as opaque.
+ */
+export async function getQdnResourceStreamUrl(ref: QdnResourceRef): Promise<string> {
+  const result = await sendBridgeRequest({
+    action: 'GET_QDN_RESOURCE_STREAM_URL',
+    service: ref.service,
+    name: ref.name,
+    ...(ref.identifier ? { identifier: ref.identifier } : {}),
+  });
+
+  return requireQdnResourceStreamUrl(result);
 }
 
 // ── Delete Resource ─────────────────────────────────────────────────

@@ -14,6 +14,7 @@ vi.mock('../qortium/bridge', () => ({
 import { sendBridgeRequest } from '../qortium/bridge';
 import {
   resolveQdnCoverUrl,
+  resolveTrackPlayback,
   resolveTrackCoverUrl,
 } from '../features/radio/player/resolveTrackPlayback';
 import type { Track } from '../types/domain';
@@ -46,20 +47,58 @@ describe('track cover resolution', () => {
     mockedSend.mockReset();
   });
 
-  it('resolves a ready cover to its QDN URL', async () => {
+  it('resolves a ready cover to its ranged QDN stream URL', async () => {
     mockedSend.mockImplementation(async (request) => {
       if (request.action === 'GET_QDN_RESOURCE_STATUS') {
         return { status: 'READY' };
       }
 
-      if (request.action === 'GET_QDN_RESOURCE_URL') {
-        return '/render/IMAGE/Owner/cover-1';
+      if (request.action === 'GET_QDN_RESOURCE_STREAM_URL') {
+        return 'https://home.invalid/qdn-media/cover-token';
       }
 
       throw new Error(`Unexpected request: ${String(request.action)}`);
     });
 
-    await expect(resolveQdnCoverUrl(cover)).resolves.toBe('/render/IMAGE/Owner/cover-1');
+    await expect(resolveQdnCoverUrl(cover)).resolves.toBe(
+      'https://home.invalid/qdn-media/cover-token',
+    );
+  });
+
+  it('uses the ranged stream action for both native audio and cover image elements', async () => {
+    mockedSend.mockImplementation(async (request) => {
+      if (request.action === 'GET_QDN_RESOURCE_STATUS') {
+        return { status: 'READY' };
+      }
+
+      if (request.action === 'GET_QDN_RESOURCE_STREAM_URL') {
+        return request.service === 'AUDIO'
+          ? 'https://home.invalid/qdn-media/audio-token'
+          : 'https://home.invalid/qdn-media/cover-token';
+      }
+
+      throw new Error(`Unexpected request: ${String(request.action)}`);
+    });
+
+    await expect(resolveTrackPlayback(trackWithCover())).resolves.toEqual({
+      audioUrl: 'https://home.invalid/qdn-media/audio-token',
+    });
+    await expect(resolveTrackCoverUrl(trackWithCover())).resolves.toBe(
+      'https://home.invalid/qdn-media/cover-token',
+    );
+
+    expect(mockedSend).toHaveBeenCalledWith({
+      action: 'GET_QDN_RESOURCE_STREAM_URL',
+      service: 'AUDIO',
+      name: 'Owner',
+      identifier: 'audio-1',
+    });
+    expect(mockedSend).toHaveBeenCalledWith({
+      action: 'GET_QDN_RESOURCE_STREAM_URL',
+      service: 'IMAGE',
+      name: 'Owner',
+      identifier: 'cover-1',
+    });
   });
 
   it('still retrieves the URL when readiness polling fails', async () => {
@@ -68,14 +107,16 @@ describe('track cover resolution', () => {
         return { status: 'NOT_PUBLISHED' };
       }
 
-      if (request.action === 'GET_QDN_RESOURCE_URL') {
-        return '/arbitrary/IMAGE/Owner/cover-1';
+      if (request.action === 'GET_QDN_RESOURCE_STREAM_URL') {
+        return 'https://home.invalid/qdn-media/cover-token';
       }
 
       throw new Error(`Unexpected request: ${String(request.action)}`);
     });
 
-    await expect(resolveQdnCoverUrl(cover)).resolves.toBe('/arbitrary/IMAGE/Owner/cover-1');
+    await expect(resolveQdnCoverUrl(cover)).resolves.toBe(
+      'https://home.invalid/qdn-media/cover-token',
+    );
   });
 
   it('returns undefined instead of throwing when URL retrieval fails', async () => {

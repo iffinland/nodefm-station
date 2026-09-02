@@ -17,8 +17,10 @@ import {
   deleteQdnResource,
   ensureQdnResourceReady,
   fetchQdnResourceData,
+  getQdnResourceStreamUrl,
   getQdnResourceUrl,
   publishResource,
+  requireQdnResourceStreamUrl,
   requireQdnResourceUrl,
   searchQdnResources,
 } from '../qortium/qdn';
@@ -90,6 +92,43 @@ describe('GET_QDN_RESOURCE_URL raw string contract', () => {
     await expect(
       getQdnResourceUrl({ service: 'AUDIO', name: 'Owner', identifier: 'audio-1' }),
     ).rejects.toThrow(/resource URL string/);
+  });
+});
+
+describe('GET_QDN_RESOURCE_STREAM_URL raw string contract', () => {
+  beforeEach(() => {
+    mockedSend.mockReset();
+  });
+
+  it('accepts an opaque media URL string', () => {
+    expect(requireQdnResourceStreamUrl('https://home.invalid/qdn-media/token')).toBe(
+      'https://home.invalid/qdn-media/token',
+    );
+  });
+
+  it('rejects empty and non-string bridge values', () => {
+    expect(() => requireQdnResourceStreamUrl('')).toThrow(/resource URL string/);
+    expect(() => requireQdnResourceStreamUrl('   ')).toThrow(/resource URL string/);
+    expect(() => requireQdnResourceStreamUrl({ url: 'https://home.invalid' })).toThrow(
+      /resource URL string/,
+    );
+    expect(() => requireQdnResourceStreamUrl(null)).toThrow(/resource URL string/);
+  });
+
+  it('requests the exact audio coordinate and returns the opaque URL unchanged', async () => {
+    const url = 'https://home.invalid/qdn-media/token';
+    mockedSend.mockResolvedValue(url);
+
+    await expect(
+      getQdnResourceStreamUrl({ service: 'AUDIO', name: 'Owner', identifier: 'audio-1' }),
+    ).resolves.toBe(url);
+
+    expect(mockedSend).toHaveBeenCalledWith({
+      action: 'GET_QDN_RESOURCE_STREAM_URL',
+      service: 'AUDIO',
+      name: 'Owner',
+      identifier: 'audio-1',
+    });
   });
 });
 

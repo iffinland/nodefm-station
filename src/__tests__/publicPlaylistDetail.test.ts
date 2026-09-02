@@ -12,10 +12,14 @@ vi.mock('../qortium/qdn', () => ({
   fetchQdnResourceData: vi.fn(),
   searchQdnResources: vi.fn(),
   ensureQdnResourceReady: vi.fn(),
-  getQdnResourceUrl: vi.fn(),
+  getQdnResourceStreamUrl: vi.fn(),
 }));
 
-import { fetchQdnResourceData, ensureQdnResourceReady, getQdnResourceUrl } from '../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  ensureQdnResourceReady,
+  getQdnResourceStreamUrl,
+} from '../qortium/qdn';
 import {
   loadPublicPlaylistDetail,
   resolvePublicPlaylistAudioTracks,
@@ -24,7 +28,7 @@ import type { Playlist, PlaylistVersion, Track } from '../types/domain';
 
 const mockedFetch = vi.mocked(fetchQdnResourceData);
 const mockedEnsureReady = vi.mocked(ensureQdnResourceReady);
-const mockedGetUrl = vi.mocked(getQdnResourceUrl);
+const mockedGetStreamUrl = vi.mocked(getQdnResourceStreamUrl);
 
 function playlist(overrides: Partial<Playlist> = {}): Playlist {
   return {
@@ -76,9 +80,9 @@ describe('loadPublicPlaylistDetail', () => {
   beforeEach(() => {
     mockedFetch.mockReset();
     mockedEnsureReady.mockReset();
-    mockedGetUrl.mockReset();
+    mockedGetStreamUrl.mockReset();
     mockedEnsureReady.mockResolvedValue(undefined);
-    mockedGetUrl.mockResolvedValue('/render/audio');
+    mockedGetStreamUrl.mockResolvedValue('/stream/audio');
   });
 
   it('reconstructs an immutable version and preserves exact track order', async () => {
@@ -171,13 +175,13 @@ describe('loadPublicPlaylistDetail', () => {
 describe('resolvePublicPlaylistAudioTracks', () => {
   beforeEach(() => {
     mockedEnsureReady.mockReset();
-    mockedGetUrl.mockReset();
+    mockedGetStreamUrl.mockReset();
   });
 
   it('resolves every track in order when audio is ready', async () => {
     mockedEnsureReady.mockResolvedValue(undefined);
-    mockedGetUrl.mockImplementation(async (ref) => {
-      return `/render/AUDIO/Owner/${String(ref.identifier)}`;
+    mockedGetStreamUrl.mockImplementation(async (ref) => {
+      return `/stream/AUDIO/Owner/${String(ref.identifier)}`;
     });
 
     const result = await resolvePublicPlaylistAudioTracks([
@@ -198,7 +202,7 @@ describe('resolvePublicPlaylistAudioTracks', () => {
         throw new Error('missing audio');
       }
     });
-    mockedGetUrl.mockResolvedValue('/render/audio');
+    mockedGetStreamUrl.mockResolvedValue('/stream/audio');
 
     const result = await resolvePublicPlaylistAudioTracks([
       { track: track('t1', 'First') },

@@ -8,7 +8,7 @@
 
 import type { Track } from '../../../types/domain';
 import type { QdnResourceRef } from '../../../types/domain';
-import { ensureQdnResourceReady, getQdnResourceUrl } from '../../../qortium/qdn';
+import { ensureQdnResourceReady, getQdnResourceStreamUrl } from '../../../qortium/qdn';
 
 export type ResolvedTrackPlayback = {
   audioUrl: string;
@@ -17,7 +17,7 @@ export type ResolvedTrackPlayback = {
 
 export async function resolveTrackPlayback(track: Track): Promise<ResolvedTrackPlayback> {
   await ensureQdnResourceReady(track.audio);
-  const audioUrl = await getQdnResourceUrl(track.audio);
+  const audioUrl = await getQdnResourceStreamUrl(track.audio);
 
   return { audioUrl };
 }
@@ -31,7 +31,7 @@ export async function resolveQdnCoverUrl(cover: QdnResourceRef): Promise<string 
       // best-effort optimization, not a hard requirement for URL retrieval.
     }
 
-    const coverUrl = await getQdnResourceUrl(cover);
+    const coverUrl = await getQdnResourceStreamUrl(cover);
     return coverUrl;
   } catch {
     return undefined;
