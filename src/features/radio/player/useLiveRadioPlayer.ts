@@ -17,7 +17,12 @@ import { useAudioEngine, usePlayerState } from '../../../audio';
 import type { Track } from '../../../types/domain';
 import type { LiveState } from '../timeline';
 import { useRadioTimeline } from '../hooks/useRadioTimeline';
-import { resolveLivePlaybackCandidate, type LivePlaybackCandidate } from './livePlaybackFallback';
+import {
+  getLivePlaybackRetryDelayMs,
+  resolveLivePlaybackCandidate,
+  shouldStartLivePlaybackResolution,
+  type LivePlaybackCandidate,
+} from './livePlaybackFallback';
 import { resolveTrackCoverUrl, resolveTrackPlayback } from './resolveTrackPlayback';
 import { recordStartupEvent } from '../../../services/perf/startupDiagnostics';
 
@@ -124,9 +129,11 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
   const loadedTrackIdRef = useRef<string | null>(null);
   const loadedSignatureRef = useRef<string | null>(null);
   const loadedContextKeyRef = useRef<string | null>(null);
+  const resolvingContextKeyRef = useRef<string | null>(null);
   const resolutionGenerationRef = useRef(0);
   const resolutionInFlightRef = useRef(false);
-  const terminalNoPlayableRef = useRef(false);
+  const retryContextKeyRef = useRef<string | null>(null);
+  const retryAfterUtcMsRef = useRef(0);
   const userPausedRef = useRef(false);
   const firstPlayableRecordedRef = useRef(false);
 
@@ -164,13 +171,16 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
         }
 
         if (resolution.status === 'fatal') {
+          retryContextKeyRef.current = contextKey;
+          retryAfterUtcMsRef.current = Date.now() + getLivePlaybackRetryDelayMs(resolution)!;
           setPlaybackError(resolution.message);
           setPlaybackWarning(null);
           return;
         }
 
         if (resolution.status === 'no-playable-track') {
-          terminalNoPlayableRef.current = true;
+          retryContextKeyRef.current = contextKey;
+          retryAfterUtcMsRef.current = Date.now() + getLivePlaybackRetryDelayMs(resolution)!;
           setPlaybackError('No playable tracks are currently available.');
           setPlaybackWarning(formatSkippedWarning(resolution.skippedTrackIds));
           return;
@@ -182,6 +192,8 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
         loadedTrackIdRef.current = resolution.track.trackId;
         loadedSignatureRef.current = trackPlaybackSignature(resolution.track);
         loadedContextKeyRef.current = contextKey;
+        retryContextKeyRef.current = null;
+        retryAfterUtcMsRef.current = 0;
         setPlaybackError(null);
         setPlaybackWarning(formatSkippedWarning(resolution.skippedTrackIds));
 
@@ -214,6 +226,7 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
       } finally {
         if (generation === resolutionGenerationRef.current) {
           resolutionInFlightRef.current = false;
+          resolvingContextKeyRef.current = null;
         }
       }
     },
@@ -225,7 +238,9 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
       resolutionGenerationRef.current += 1;
       const generation = resolutionGenerationRef.current;
       resolutionInFlightRef.current = true;
-      terminalNoPlayableRef.current = false;
+      resolvingContextKeyRef.current = contextKey;
+      retryContextKeyRef.current = null;
+      retryAfterUtcMsRef.current = 0;
       setPlaybackError(null);
       setPlaybackWarning(null);
       void resolveLiveContext(live, candidates, contextKey, generation);
@@ -253,7 +268,17 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     const candidates = timeline.playbackCandidates;
     const contextKey = liveContextKey(live, candidates);
 
-    if (!contextKey || loadedContextKeyRef.current === contextKey) {
+    if (
+      !contextKey ||
+      !shouldStartLivePlaybackResolution(
+        contextKey,
+        loadedContextKeyRef.current,
+        resolvingContextKeyRef.current,
+        retryContextKeyRef.current,
+        retryAfterUtcMsRef.current,
+        Date.now(),
+      )
+    ) {
       return;
     }
 
@@ -287,8 +312,7 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     if (
       !contextKey ||
       loadedContextKeyRef.current === contextKey ||
-      resolutionInFlightRef.current ||
-      terminalNoPlayableRef.current
+      resolutionInFlightRef.current
     ) {
       return;
     }
@@ -297,7 +321,7 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
       if (
         loadedContextKeyRef.current !== contextKey &&
         !resolutionInFlightRef.current &&
-        !terminalNoPlayableRef.current
+        (retryContextKeyRef.current !== contextKey || Date.now() >= retryAfterUtcMsRef.current)
       ) {
         setRetryNonce((value) => value + 1);
       }
@@ -377,7 +401,11 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
       } = {},
     ) => {
       userPausedRef.current = false;
-      terminalNoPlayableRef.current = false;
+      resolutionGenerationRef.current += 1;
+      resolutionInFlightRef.current = false;
+      resolvingContextKeyRef.current = null;
+      retryContextKeyRef.current = null;
+      retryAfterUtcMsRef.current = 0;
       setPlaybackError(null);
       setPlaybackWarning(null);
       engine.enterPlaylistMode(tracks, options);
@@ -408,8 +436,11 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     loadedTrackIdRef.current = null;
     loadedSignatureRef.current = null;
     loadedContextKeyRef.current = null;
+    resolvingContextKeyRef.current = null;
+    resolutionInFlightRef.current = false;
+    retryContextKeyRef.current = null;
     resolutionGenerationRef.current += 1;
-    terminalNoPlayableRef.current = false;
+    retryAfterUtcMsRef.current = 0;
     setPlaybackError(null);
     setPlaybackWarning(null);
     engine.returnToLive();
@@ -420,7 +451,11 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
     loadedTrackIdRef.current = null;
     loadedSignatureRef.current = null;
     loadedContextKeyRef.current = null;
-    terminalNoPlayableRef.current = false;
+    resolvingContextKeyRef.current = null;
+    resolutionGenerationRef.current += 1;
+    resolutionInFlightRef.current = false;
+    retryContextKeyRef.current = null;
+    retryAfterUtcMsRef.current = 0;
     setPlaybackError(null);
     setPlaybackWarning(null);
     setRetryNonce((value) => value + 1);

@@ -39,6 +39,42 @@ export type LivePlaybackCandidateResolution =
       trackId?: string;
     };
 
+export const LIVE_PLAYBACK_FATAL_RETRY_DELAY_MS = 5_000;
+export const LIVE_PLAYBACK_NO_CANDIDATE_RETRY_DELAY_MS = 15_000;
+
+/**
+ * Read failures are retryable because QDN readiness and resource lookup can
+ * recover without a timeline change. A complete no-candidate pass uses a
+ * longer cooldown so a genuinely missing source does not hammer Core.
+ */
+export function getLivePlaybackRetryDelayMs(
+  resolution: LivePlaybackCandidateResolution,
+): number | null {
+  if (resolution.status === 'ready') {
+    return null;
+  }
+
+  return resolution.status === 'no-playable-track'
+    ? LIVE_PLAYBACK_NO_CANDIDATE_RETRY_DELAY_MS
+    : LIVE_PLAYBACK_FATAL_RETRY_DELAY_MS;
+}
+
+export function shouldStartLivePlaybackResolution(
+  contextKey: string | null,
+  loadedContextKey: string | null,
+  resolvingContextKey: string | null,
+  retryContextKey: string | null,
+  retryAfterUtcMs: number,
+  nowUtcMs: number,
+): boolean {
+  return (
+    contextKey !== null &&
+    contextKey !== loadedContextKey &&
+    contextKey !== resolvingContextKey &&
+    (contextKey !== retryContextKey || nowUtcMs >= retryAfterUtcMs)
+  );
+}
+
 function clipStartIndex(startIndex: number, length: number): number {
   if (!Number.isInteger(startIndex) || startIndex < 0) {
     return 0;
@@ -73,7 +109,15 @@ export async function resolveLivePlaybackCandidate(
 
     seenTrackIds.add(candidate.trackId);
 
-    if (options.sourceEndUtcMs !== undefined && candidate.trackEndUtcMs > options.sourceEndUtcMs) {
+    // A scheduled source may end part-way through its final track. That track
+    // is still the canonical LIVE source until the schedule boundary and must
+    // be allowed to resolve; the timeline transition stops it at the boundary.
+    // Only candidates that start at or after the boundary are outside the
+    // scheduled source.
+    if (
+      options.sourceEndUtcMs !== undefined &&
+      candidate.trackStartUtcMs >= options.sourceEndUtcMs
+    ) {
       continue;
     }
 

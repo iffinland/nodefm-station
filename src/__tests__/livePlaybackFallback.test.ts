@@ -7,7 +7,11 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import {
+  getLivePlaybackRetryDelayMs,
+  LIVE_PLAYBACK_FATAL_RETRY_DELAY_MS,
+  LIVE_PLAYBACK_NO_CANDIDATE_RETRY_DELAY_MS,
   resolveLivePlaybackCandidate,
+  shouldStartLivePlaybackResolution,
   type LivePlaybackCandidate,
 } from '../features/radio/player/livePlaybackFallback';
 import { createTrack } from '../features/tracks/services/trackService';
@@ -147,7 +151,7 @@ describe('resolveLivePlaybackCandidate', () => {
     expect(resolveTrack).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-2' }));
   });
 
-  it('respects a hard scheduled end boundary', async () => {
+  it('allows the final scheduled track to play until a mid-track schedule boundary', async () => {
     const resolveTrack = vi.fn(async () => resolvedPlayback);
     const result = await resolveLivePlaybackCandidate(
       [
@@ -156,8 +160,8 @@ describe('resolveLivePlaybackCandidate', () => {
           trackEndUtcMs: 210_000,
         }),
         candidate('track-1', track('track-1'), {
-          trackStartUtcMs: 150_000,
-          trackEndUtcMs: 190_000,
+          trackStartUtcMs: 210_000,
+          trackEndUtcMs: 260_000,
         }),
       ],
       {
@@ -169,8 +173,36 @@ describe('resolveLivePlaybackCandidate', () => {
 
     expect(result).toMatchObject({
       status: 'ready',
-      track: expect.objectContaining({ trackId: 'track-1' }),
+      track: expect.objectContaining({ trackId: 'track-0' }),
     });
+    expect(resolveTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resolve a fallback candidate that starts at the schedule boundary', async () => {
+    const resolveTrack = vi.fn(async () => resolvedPlayback);
+    const result = await resolveLivePlaybackCandidate(
+      [
+        candidate('track-0', null, {
+          trackStartUtcMs: 100_000,
+          trackEndUtcMs: 180_000,
+        }),
+        candidate('track-1', track('track-1'), {
+          trackStartUtcMs: 200_000,
+          trackEndUtcMs: 260_000,
+        }),
+      ],
+      {
+        startIndex: 0,
+        sourceEndUtcMs: 200_000,
+        resolveTrack,
+      },
+    );
+
+    expect(result).toEqual({
+      status: 'no-playable-track',
+      skippedTrackIds: ['track-0'],
+    });
+    expect(resolveTrack).not.toHaveBeenCalled();
   });
 
   it('falls forward inside a scheduled event when the scheduled candidate is missing', async () => {
@@ -254,5 +286,60 @@ describe('resolveLivePlaybackCandidate', () => {
     });
 
     expect(second).toEqual(first);
+  });
+});
+
+describe('live playback retry policy', () => {
+  it('does not restart the same live context while its resolution is in flight', () => {
+    expect(shouldStartLivePlaybackResolution('context-a', null, 'context-a', null, 0, 100)).toBe(
+      false,
+    );
+    expect(shouldStartLivePlaybackResolution('context-b', null, 'context-a', null, 0, 100)).toBe(
+      true,
+    );
+    expect(shouldStartLivePlaybackResolution('context-a', 'context-a', null, null, 0, 100)).toBe(
+      false,
+    );
+  });
+
+  it('honors a retry cooldown without delaying a new timeline context', () => {
+    expect(shouldStartLivePlaybackResolution('context-a', null, null, 'context-a', 200, 100)).toBe(
+      false,
+    );
+    expect(shouldStartLivePlaybackResolution('context-a', null, null, 'context-a', 200, 200)).toBe(
+      true,
+    );
+    expect(shouldStartLivePlaybackResolution('context-b', null, null, 'context-a', 200, 100)).toBe(
+      true,
+    );
+  });
+
+  it('retries a complete no-playable pass after a bounded cooldown', () => {
+    expect(
+      getLivePlaybackRetryDelayMs({
+        status: 'no-playable-track',
+        skippedTrackIds: ['track-0'],
+      }),
+    ).toBe(LIVE_PLAYBACK_NO_CANDIDATE_RETRY_DELAY_MS);
+  });
+
+  it('retries transient resolution failures sooner and never retries a ready result', () => {
+    expect(
+      getLivePlaybackRetryDelayMs({
+        status: 'fatal',
+        code: 'playback-resolution-error',
+        message: 'temporarily unavailable',
+      }),
+    ).toBe(LIVE_PLAYBACK_FATAL_RETRY_DELAY_MS);
+
+    expect(
+      getLivePlaybackRetryDelayMs({
+        status: 'ready',
+        track: track('track-0'),
+        playback: resolvedPlayback,
+        skippedTrackIds: [],
+        candidateIndex: 0,
+      }),
+    ).toBeNull();
   });
 });
