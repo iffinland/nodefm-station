@@ -128,4 +128,32 @@ describe('Qortium bridge transport', () => {
       /account unavailable/,
     );
   });
+
+  /**
+   * Home 2.1 builds and broadcasts a publish sub-second after approval, but its
+   * response can take ~120 s to reach the app. A write must therefore keep a
+   * longer budget than a read, or a successful publish is reported as a timeout
+   * and the user is invited to publish it twice.
+   */
+  it('gives a signed write a longer budget than a read', async () => {
+    vi.useFakeTimers();
+    try {
+      const qdnRequest = vi.fn(() => new Promise(() => {}));
+      vi.stubGlobal('window', { qdnRequest });
+
+      const write = sendBridgeRequest({ action: 'PUBLISH_QDN_RESOURCE', service: 'JSON' });
+      const writeOutcome = write.catch((error: unknown) => String(error));
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(qdnRequest).not.toHaveBeenCalledTimes(0);
+      await vi.advanceTimersByTimeAsync(180_000);
+      await expect(writeOutcome).resolves.toMatch(/timed out after 300 seconds/);
+
+      const read = sendBridgeRequest({ action: 'GET_QDN_RESOURCE_STATUS' });
+      const readOutcome = read.catch((error: unknown) => String(error));
+      await vi.advanceTimersByTimeAsync(120_000);
+      await expect(readOutcome).resolves.toMatch(/timed out after 120 seconds/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -11,6 +11,7 @@
 import type { Playlist, PlaylistVersion, PlaylistVersionTrack } from '../../../types/domain';
 import {
   fetchQdnResourceData,
+  qdnJsonPublishFileName,
   publishMultipleResources,
   searchQdnResources,
 } from '../../../qortium/qdn';
@@ -142,13 +143,15 @@ export function getListenerPlaylistLoadAction(
 }
 
 function playlistPublishResource(playlist: Playlist, ownerName: string): PublishMultipleResource {
-  const data64 = btoa(unescape(encodeURIComponent(serializePlaylistForQdn(playlist))));
+  const identifier = getListenerPlaylistQdnIdentifier(playlist.playlistId);
 
   return {
     service: LISTENER_PLAYLIST_QDN_SERVICE,
     name: ownerName.trim(),
-    identifier: getListenerPlaylistQdnIdentifier(playlist.playlistId),
-    data64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(serializePlaylistForQdn(playlist)))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: playlist.title,
     description: playlist.description,
   };
@@ -158,13 +161,15 @@ function versionPublishResource(
   version: PlaylistVersion,
   ownerName: string,
 ): PublishMultipleResource {
-  const data64 = btoa(unescape(encodeURIComponent(serializePlaylistVersionForQdn(version))));
+  const identifier = getListenerPlaylistVersionQdnIdentifier(version.versionId);
 
   return {
     service: 'JSON',
     name: ownerName.trim(),
-    identifier: getListenerPlaylistVersionQdnIdentifier(version.versionId),
-    data64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(serializePlaylistVersionForQdn(version)))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: `Listener playlist version ${version.versionNumber}`,
   };
 }

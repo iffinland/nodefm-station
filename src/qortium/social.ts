@@ -16,6 +16,7 @@
  * ============================================================ */
 
 import { sendBridgeRequest } from './bridge';
+import { requireAccountWrite } from './accountWriteGate';
 
 export type DirectChatMessageInput = {
   recipientAddress: string;
@@ -77,6 +78,8 @@ function acceptedErrorMessage(value: Record<string, unknown>): string {
 export async function sendDirectChatMessage(
   input: DirectChatMessageInput,
 ): Promise<DirectChatMessageResult> {
+  await requireAccountWrite('SEND_CHAT_MESSAGE');
+
   const response = await sendBridgeRequest<unknown>({
     action: 'SEND_CHAT_MESSAGE',
     recipientAddress: input.recipientAddress,
@@ -106,6 +109,8 @@ export async function sendDirectChatMessage(
  * approval path. The caller must not retry this automatically.
  */
 export async function sendNativeTip(input: NativeTipInput): Promise<NativeTipResult> {
+  await requireAccountWrite('SEND_COIN');
+
   const response = await sendBridgeRequest<unknown>({
     action: 'SEND_COIN',
     recipient: input.recipient,

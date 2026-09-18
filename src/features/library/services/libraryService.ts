@@ -12,6 +12,7 @@ import type { Track } from '../../../types/domain';
 import {
   publishResource,
   publishMultipleResources,
+  qdnJsonPublishFileName,
   fetchQdnResourceData,
   searchQdnResources,
   deleteQdnResource,
@@ -77,13 +78,15 @@ async function persistTrack(track: Track, ownerName: string): Promise<void> {
 
 export function trackPublishResource(track: Track, ownerName: string): PublishMultipleResource {
   const json = serializeTrackForQdn(track);
-  const base64 = btoa(unescape(encodeURIComponent(json)));
+  const identifier = getTrackQdnIdentifier(track.trackId);
 
   return {
     service: TRACK_SERVICE,
     name: ownerName,
-    identifier: getTrackQdnIdentifier(track.trackId),
-    data64: base64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(json))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: track.title,
     description: track.description,
     tags: track.tags,

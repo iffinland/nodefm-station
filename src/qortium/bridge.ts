@@ -171,6 +171,21 @@ export function isBridgeAvailable(): boolean {
 // ── Request ─────────────────────────────────────────────────────────
 
 const REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Signed / QDN write budget.
+ *
+ * A write is not a read: Home runs its own approval, then signs and broadcasts
+ * one or more transactions before the bridge call returns. Measured on Home
+ * 2.1.0-beta.11 against a real Qortium testnet node: a one-resource publish was
+ * built and broadcast ~0.4 s after the approval click, but Home's response
+ * reached the app roughly 120 s later — exactly at the read budget, so a
+ * *successful* publish was reported as REQUEST_TIMEOUT and the user was left
+ * with a "failed" write that had actually landed (and a retry would have
+ * published it twice). Reads keep the shorter budget so a stalled read still
+ * fails fast; writes get a budget that tolerates Home's signing and broadcast
+ * path.
+ */
+const WRITE_REQUEST_TIMEOUT_MS = 300_000;
 const BRIDGE_WAIT_MS = 4_000;
 const BRIDGE_POLL_MS = 200;
 const READ_RETRY_COUNT = 2;
@@ -188,6 +203,8 @@ const READ_ACTIONS = new Set([
   'GET_QDN_RESOURCE_METADATA',
   'GET_QDN_RESOURCE_URL',
   'GET_QDN_RESOURCE_STREAM_URL',
+  'GET_QDN_BACKGROUND_AUDIO_STATUS',
+  'SHOW_ACTIONS',
   'GET_SELECTED_ACCOUNT',
   'GET_ACCOUNT_NAMES',
   'GET_NAME_DATA',
@@ -348,6 +365,7 @@ function toRequestError(value: unknown, action: string): Error {
 export async function sendBridgeRequest<T = unknown>(request: Record<string, unknown>): Promise<T> {
   const action = typeof request.action === 'string' ? request.action : 'UNKNOWN_ACTION';
   const maxAttempts = READ_ACTIONS.has(action) ? READ_RETRY_COUNT + 1 : 1;
+  const timeoutMs = READ_ACTIONS.has(action) ? REQUEST_TIMEOUT_MS : WRITE_REQUEST_TIMEOUT_MS;
   const service = typeof request.service === 'string' ? request.service : undefined;
   const nameFilter = typeof request.name === 'string' ? request.name : undefined;
   const identifier = typeof request.identifier === 'string' ? request.identifier : undefined;
@@ -381,10 +399,10 @@ export async function sendBridgeRequest<T = unknown>(request: Record<string, unk
         reject(
           new QortiumBridgeError(
             'REQUEST_TIMEOUT',
-            `Qortium request ${action} timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`,
+            `Qortium request ${action} timed out after ${timeoutMs / 1000} seconds.`,
           ),
         );
-      }, REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
     });
 
     try {

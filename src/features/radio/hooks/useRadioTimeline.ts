@@ -42,12 +42,14 @@ export type UseRadioTimelineResult = {
   playbackCandidates: LivePlaybackCandidate[];
   missingTrackIds: string[];
   upcoming: UpcomingTrackWithMetadata[];
+  backgroundUpcoming: Array<UpcomingTrackWithMetadata & { track: Track }>;
   upcomingResult: ReturnType<typeof getUpcomingTracks>;
   scheduleEvents: ScheduleEvent[];
   refreshData: () => Promise<void>;
 };
 
 const UPCOMING_COUNT = 5;
+const BACKGROUND_UPCOMING_COUNT = 255;
 
 export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
   const {
@@ -82,6 +84,11 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
 
   const upcomingResult = useMemo(
     () => getUpcomingTracks(nowUtcMs, UPCOMING_COUNT, timelineInput),
+    [nowUtcMs, timelineInput],
+  );
+
+  const backgroundUpcomingResult = useMemo(
+    () => getUpcomingTracks(nowUtcMs, BACKGROUND_UPCOMING_COUNT, timelineInput),
     [nowUtcMs, timelineInput],
   );
 
@@ -135,6 +142,24 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
     });
   }, [upcomingResult, dataState.data]);
 
+  const backgroundUpcoming = useMemo(() => {
+    if (backgroundUpcomingResult.status !== 'ready' || !dataState.data) return [];
+    return backgroundUpcomingResult.tracks.flatMap((item) => {
+      const track = dataState.data?.tracks[item.trackId];
+      return track
+        ? [
+            {
+              ...item,
+              title: track.title,
+              artist: track.artist,
+              durationMs: item.durationMs,
+              track,
+            },
+          ]
+        : [];
+    });
+  }, [backgroundUpcomingResult, dataState.data]);
+
   return {
     stationLoaded,
     stationLoading,
@@ -149,6 +174,7 @@ export function useRadioTimeline(nowOverride?: number): UseRadioTimelineResult {
     playbackCandidates,
     missingTrackIds: dataState.data?.unavailableTrackIds ?? [],
     upcoming,
+    backgroundUpcoming,
     upcomingResult,
     scheduleEvents: dataState.data?.scheduleEvents ?? [],
     refreshData: dataState.refresh,

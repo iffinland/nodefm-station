@@ -155,7 +155,10 @@ async function adapterWithCapability(
     }
     throw new Error(`Unexpected ${String(request.action)}`);
   });
-  const adapter = createHome2BulkPublicationAdapter({ transport });
+  const adapter = createHome2BulkPublicationAdapter({
+    transport,
+    writeAccountGate: async () => ({ address: 'QTestAccount', isUnlocked: true }),
+  });
   await adapter.detectCapability();
   return { adapter, transport: transport as unknown as ReturnType<typeof vi.fn> };
 }

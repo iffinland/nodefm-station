@@ -8,6 +8,7 @@
 import type { Playlist, PlaylistVersion } from '../../../types/domain';
 import {
   publishResource,
+  qdnJsonPublishFileName,
   publishMultipleResources,
   fetchQdnResourceData,
   searchQdnResources,
@@ -87,13 +88,15 @@ export function playlistPublishResource(
   ownerName: string,
 ): PublishMultipleResource {
   const json = serializePlaylistForQdn(playlist);
-  const base64 = btoa(unescape(encodeURIComponent(json)));
+  const identifier = getPlaylistQdnIdentifier(playlist.playlistId);
 
   return {
     service: PLAYLIST_SERVICE,
     name: ownerName,
-    identifier: getPlaylistQdnIdentifier(playlist.playlistId),
-    data64: base64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(json))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: playlist.title,
     description: playlist.description,
   };
@@ -108,13 +111,15 @@ export function playlistVersionPublishResource(
   ownerName: string,
 ): PublishMultipleResource {
   const json = serializePlaylistVersionForQdn(version);
-  const base64 = btoa(unescape(encodeURIComponent(json)));
+  const identifier = getPlaylistVersionQdnIdentifier(version.versionId);
 
   return {
     service: VERSION_SERVICE,
     name: ownerName,
-    identifier: getPlaylistVersionQdnIdentifier(version.versionId),
-    data64: base64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(json))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: `Version ${version.versionNumber}`,
   };
 }

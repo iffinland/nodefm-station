@@ -9,6 +9,7 @@ vi.mock('../qortium/bridge', () => ({
 }));
 
 import { sendBridgeRequest } from '../qortium/bridge';
+import { withUnlockedTestAccount } from './support/writeGateBridge';
 import {
   buildNativeTipRequest,
   normalizeTipAmount,
@@ -55,12 +56,14 @@ describe('native tip request contract', () => {
   });
 
   it('sends a valid tip exactly once and parses success', async () => {
-    mockedSend.mockResolvedValue({
-      accepted: true,
-      recipient: 'Q-owner',
-      amount: '1.25',
-      transactionSignature: 'tip-tx',
-    });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({
+        accepted: true,
+        recipient: 'Q-owner',
+        amount: '1.25',
+        transactionSignature: 'tip-tx',
+      })),
+    );
 
     const result = await sendStationTip({
       recipient: 'Q-owner',
@@ -68,7 +71,9 @@ describe('native tip request contract', () => {
       tipsEnabled: true,
     });
 
-    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(
+      mockedSend.mock.calls.filter(([request]) => request.action === 'SEND_COIN'),
+    ).toHaveLength(1);
     expect(mockedSend).toHaveBeenCalledWith({
       action: 'SEND_COIN',
       recipient: 'Q-owner',
@@ -78,11 +83,17 @@ describe('native tip request contract', () => {
   });
 
   it('propagates cancel/reject/failure without retry', async () => {
-    mockedSend.mockRejectedValue(new Error('USER_CANCELLED'));
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => {
+        throw new Error('USER_CANCELLED');
+      }),
+    );
 
     await expect(
       sendStationTip({ recipient: 'Q-owner', amount: '1.25', tipsEnabled: true }),
     ).rejects.toThrow(/USER_CANCELLED/);
-    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(
+      mockedSend.mock.calls.filter(([request]) => request.action === 'SEND_COIN'),
+    ).toHaveLength(1);
   });
 });

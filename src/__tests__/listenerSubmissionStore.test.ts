@@ -13,6 +13,7 @@ vi.mock('../qortium/qdn', () => ({
   getQdnResourceUrl: vi.fn(),
   publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
+  qdnJsonPublishFileName: (identifier: string) => `${identifier}.json`,
   searchQdnResources: vi.fn(),
 }));
 
@@ -202,7 +203,7 @@ describe('publishListenerSubmission', () => {
       submitterName: LISTENER_A,
       submitterAddress: LISTENER_A_ADDRESS,
       title: 'Covered Song',
-      cover: { fileName: 'cover.jpg', data64: 'aW1hZ2U=' },
+      cover: { fileName: 'cover.jpg', bytesBase64: 'aW1hZ2U=', mimeType: 'image/jpeg' },
       audioSource: {
         canceled: false,
         fileName: 'song.mp3',

@@ -1,54 +1,32 @@
 /* ============================================================
- * NodeFM Station — QDN Publish Filename Normalization
+ * NodeFM Station — QDN Publish Filename Contract (Home 2.1)
  *
  * NodeFM publishes browser File objects through the Qortium bridge.
- * The live Core contract currently rejects filenames that are not
- * representable in the node's filesystem charset, so NodeFM must keep
- * the QDN filename field transport-safe while preserving the original
- * filename for display in NodeFM-owned metadata.
+ * The filename handed to Home's publish-source staging is the
+ * filename Home publishes, so NodeFM forwards the original name.
  *
- * This module intentionally distinguishes:
- *   - unsafe filesystem/path input -> reject
- *   - Unicode filename -> transport-safe ASCII, original preserved
- *   - normal ASCII filename -> unchanged
+ * Home 2.1 sanitizes the staged name itself — leaf-only, control
+ * characters replaced, trailing dots/spaces trimmed, 180 characters
+ * (`sanitizeHomeV2BlobFileName` in
+ * `electron/home-v2-publish-blob-source.ts`) — and it keeps Unicode:
+ * accented, Cyrillic, CJK and symbol characters survive staging.
+ * That behavior is Home's issue #330 fix, shipped in Home
+ * `v2.1.0-beta.11` (merge commit `11f50967`, PR #337).
+ *
+ * NodeFM therefore keeps only the input rules Home cannot be asked to
+ * repair: a filename must be a single leaf name and must not carry
+ * path or control characters. Unicode is never transliterated, hashed
+ * or ASCII-normalized, because Home 2.1 and Core both accept it.
  * ============================================================ */
 
 export type QdnPublishFilename = {
   /** The original user-visible filename, NFC-normalized and trimmed. */
   display: string;
-  /** The ASCII-only filename safe to hand to the QDN bridge/Core. */
-  transport: string;
+  /** The filename handed to Home's publish-source staging. */
+  staged: string;
 };
 
-const PRINTABLE_ASCII = /^[\x20-\x7e]+$/;
 const WINDOWS_DRIVE_PATH = /^[a-z]:[\\/]/i;
-
-function stableHash(value: string): string {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return (hash >>> 0).toString(36);
-}
-
-function getSafeExtension(filename: string): string {
-  const lastDot = filename.lastIndexOf('.');
-
-  if (lastDot <= 0 || lastDot === filename.length - 1) {
-    return 'bin';
-  }
-
-  const extension = filename.slice(lastDot + 1);
-
-  if (/^[a-z0-9]{1,10}$/i.test(extension)) {
-    return extension.toLowerCase();
-  }
-
-  return 'bin';
-}
 
 function hasControlOrDel(value: string): boolean {
   for (const character of value) {
@@ -79,53 +57,34 @@ function assertSafeFilenameInput(filename: string): void {
 }
 
 /**
- * Normalize a browser filename for QDN publication.
+ * Resolve the filename NodeFM stages and publishes.
  *
- * Normal ASCII filenames are preserved unchanged. Filenames containing
- * Unicode or other non-ASCII characters are kept for display but replaced
- * with a deterministic ASCII transport filename, because the current Core
- * contract rejects non-ASCII filenames.
+ * The original name is preserved after NFC normalization and trimming,
+ * including every Unicode character. Unsafe path/control input is
+ * rejected instead of silently rewritten.
  */
-export function normalizeQdnPublishFilename(
+export function resolveQdnPublishFilename(
   value: string | undefined,
   fallback = 'qdn-resource',
 ): QdnPublishFilename {
   const rawDisplay = (value ?? '').trim();
 
   if (!rawDisplay) {
-    return {
-      display: fallback,
-      transport: fallback,
-    };
+    return { display: fallback, staged: fallback };
   }
 
   const display = rawDisplay.normalize('NFC');
 
   assertSafeFilenameInput(display);
 
-  if (PRINTABLE_ASCII.test(display)) {
-    return {
-      display,
-      transport: display,
-    };
-  }
-
-  const extension = getSafeExtension(display);
-
-  return {
-    display,
-    transport: `nodefm-upload-${stableHash(display)}.${extension}`,
-  };
+  return { display, staged: display };
 }
 
-/**
- * True when a filename can be passed to the current QDN/Core filename path
- * without normalization.
- */
-export function isQdnTransportFilenameSafe(value: string): boolean {
+/** True when the filename can be staged and published without rewriting. */
+export function isQdnPublishFilenameSafe(value: string): boolean {
   if (!value.trim()) {
     return false;
   }
 
-  return normalizeQdnPublishFilename(value).transport === value.trim();
+  return resolveQdnPublishFilename(value).staged === value.trim();
 }

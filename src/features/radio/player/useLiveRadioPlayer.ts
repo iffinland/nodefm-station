@@ -25,6 +25,12 @@ import {
 } from './livePlaybackFallback';
 import { resolveTrackCoverUrl, resolveTrackPlayback } from './resolveTrackPlayback';
 import { recordStartupEvent } from '../../../services/perf/startupDiagnostics';
+import {
+  controlQdnBackgroundAudio,
+  getQdnBackgroundAudioStatus,
+  isQdnBackgroundAudioSupported,
+  startLiveBackgroundAudio,
+} from './backgroundAudio';
 
 const HARD_RESYNC_SEC = 3;
 const READY_STATES = new Set(['ready', 'playing', 'paused']);
@@ -125,6 +131,10 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
 
   const timelineLiveRef = useRef(timeline.liveState);
   timelineLiveRef.current = timeline.liveState;
+  const timelineCurrentTrackRef = useRef(timeline.currentTrack);
+  timelineCurrentTrackRef.current = timeline.currentTrack;
+  const backgroundUpcomingRef = useRef(timeline.backgroundUpcoming);
+  backgroundUpcomingRef.current = timeline.backgroundUpcoming;
 
   const loadedTrackIdRef = useRef<string | null>(null);
   const loadedSignatureRef = useRef<string | null>(null);
@@ -136,6 +146,8 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
   const retryAfterUtcMsRef = useRef(0);
   const userPausedRef = useRef(false);
   const firstPlayableRecordedRef = useRef(false);
+  const backgroundHandoffRef = useRef(false);
+  const backgroundTransitionRef = useRef(0);
 
   const playIfAllowed = useCallback(() => {
     if (!userPausedRef.current) {
@@ -368,6 +380,76 @@ export function useLiveRadioPlayer(): LiveRadioPlayer {
       window.clearInterval(timer);
     };
   }, [engine, playerState.mode, liveTrackId]);
+
+  useEffect(() => {
+    // Warm the capability check while the WebView is foregrounded so the
+    // visibility handoff does not depend on starting a bridge round-trip
+    // after Android has already begun suspending page work.
+    void isQdnBackgroundAudioSupported();
+
+    const handleVisibilityChange = async () => {
+      const transition = ++backgroundTransitionRef.current;
+
+      if (document.hidden) {
+        const state = playerStateRef.current;
+        const live = timelineLiveRef.current;
+        const currentTrack = timelineCurrentTrackRef.current;
+        if (
+          state.mode !== 'LIVE' ||
+          state.playbackState !== 'playing' ||
+          userPausedRef.current ||
+          !live ||
+          !currentTrack ||
+          !(await isQdnBackgroundAudioSupported()) ||
+          transition !== backgroundTransitionRef.current ||
+          !document.hidden
+        ) {
+          return;
+        }
+
+        engine.pause();
+        try {
+          await startLiveBackgroundAudio(live, currentTrack, backgroundUpcomingRef.current);
+          if (transition !== backgroundTransitionRef.current || !document.hidden) {
+            await controlQdnBackgroundAudio('stop').catch(() => undefined);
+            if (!document.hidden && !userPausedRef.current) engine.play();
+            return;
+          }
+          backgroundHandoffRef.current = true;
+        } catch {
+          if (
+            transition === backgroundTransitionRef.current &&
+            document.hidden &&
+            !userPausedRef.current
+          ) {
+            engine.play();
+          }
+        }
+        return;
+      }
+
+      if (!backgroundHandoffRef.current) return;
+      backgroundHandoffRef.current = false;
+      const status = await getQdnBackgroundAudioStatus().catch(() => null);
+      await controlQdnBackgroundAudio('stop').catch(() => undefined);
+      if (transition !== backgroundTransitionRef.current || document.hidden) return;
+
+      userPausedRef.current = status?.playWhenReady === false;
+      loadedTrackIdRef.current = null;
+      loadedSignatureRef.current = null;
+      loadedContextKeyRef.current = null;
+      resolvingContextKeyRef.current = null;
+      resolutionGenerationRef.current += 1;
+      resolutionInFlightRef.current = false;
+      retryContextKeyRef.current = null;
+      retryAfterUtcMsRef.current = 0;
+      engine.returnToLive();
+      setRetryNonce((value) => value + 1);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [engine]);
 
   const togglePlayPause = useCallback(() => {
     if (playerState.playbackState === 'playing') {

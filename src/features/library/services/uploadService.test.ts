@@ -9,6 +9,7 @@ import {
 } from './uploadService';
 
 vi.mock('../../../qortium/qdn', () => ({
+  qdnJsonPublishFileName: (identifier: string) => `${identifier}.json`,
   publishMultipleResources: vi.fn(),
 }));
 
@@ -25,12 +26,11 @@ const mockedTrackPublishResource = vi.mocked(trackPublishResource);
 const mockedBuildCover = vi.mocked(buildTrackCoverPublishResource);
 
 describe('buildUploadAudioPublishResource', () => {
-  it('uses the sourceToken transport with the selected filename and title', () => {
+  it('publishes the AUDIO item with a Home-issued sourceToken only', () => {
     const resource = buildUploadAudioPublishResource({
       publisherName: 'NodeFM',
       audioIdentifier: 'nodefm-audio-1',
       audioSourceToken: 'token-1',
-      audioFileName: 'song.mp3',
       title: 'Song',
     });
 
@@ -40,7 +40,6 @@ describe('buildUploadAudioPublishResource', () => {
       identifier: 'nodefm-audio-1',
       sourceToken: 'token-1',
       title: 'Song',
-      filename: 'song.mp3',
     });
   });
 });
@@ -55,7 +54,9 @@ describe('publishUploadMediaResources', () => {
         service: 'IMAGE',
         name: 'NodeFM',
         identifier: 'nodefm-cover-1',
-        data64: 'aW1hZ2U=',
+        bytesBase64: 'aW1hZ2U=',
+        fileName: 'cover.png',
+        mimeType: 'image/png',
       },
       ref: { service: 'IMAGE', name: 'NodeFM', identifier: 'nodefm-cover-1' },
     });
@@ -82,13 +83,12 @@ describe('publishUploadMediaResources', () => {
       publisherName: 'NodeFM',
       audioIdentifier: 'nodefm-audio-1',
       audioSourceToken: 'token-1',
-      audioFileName: 'song.mp3',
       title: 'Song',
       cover: {
         publisherName: 'NodeFM',
         title: 'Song',
         file: new File(['cover'], 'cover.png', { type: 'image/png' }),
-        data64: 'aW1hZ2U=',
+        bytesBase64: 'aW1hZ2U=',
       },
     });
 
@@ -117,7 +117,9 @@ describe('publishUploadMediaResources', () => {
         service: 'IMAGE',
         name: 'NodeFM',
         identifier: 'nodefm-cover-1',
-        data64: 'aW1hZ2U=',
+        bytesBase64: 'aW1hZ2U=',
+        fileName: 'cover.png',
+        mimeType: 'image/png',
       },
       ref: { service: 'IMAGE', name: 'NodeFM', identifier: 'nodefm-cover-1' },
     });
@@ -138,13 +140,12 @@ describe('publishUploadMediaResources', () => {
       publisherName: 'NodeFM',
       audioIdentifier: 'nodefm-audio-1',
       audioSourceToken: 'token-1',
-      audioFileName: 'song.mp3',
       title: 'Song',
       cover: {
         publisherName: 'NodeFM',
         title: 'Song',
         file: new File(['cover'], 'cover.png', { type: 'image/png' }),
-        data64: 'aW1hZ2U=',
+        bytesBase64: 'aW1hZ2U=',
       },
     });
 
@@ -162,7 +163,9 @@ describe('publishUploadTrackMetadata', () => {
       service: 'JSON',
       name: 'NodeFM',
       identifier: 'nodefm-track-t1',
-      data64: 'e30=',
+      bytesBase64: 'e30=',
+      fileName: 'nodefm-track-t1.json',
+      mimeType: 'application/json',
       title: 'Song',
     });
 
@@ -206,7 +209,9 @@ describe('publishUploadTrackMetadata', () => {
       service: 'JSON',
       name: 'NodeFM',
       identifier: 'nodefm-track-t1',
-      data64: 'e30=',
+      bytesBase64: 'e30=',
+      fileName: 'nodefm-track-t1.json',
+      mimeType: 'application/json',
       title: 'Song',
     });
 

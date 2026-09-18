@@ -16,6 +16,7 @@ import type {
 import {
   fetchQdnResourceData,
   publishMultipleResources,
+  qdnJsonPublishFileName,
   publishResource,
   searchQdnResources,
 } from '../../../qortium/qdn';
@@ -66,15 +67,17 @@ async function persistDefinition(
     throw new Error('Request Show definition is invalid.');
   }
 
-  const data64 = btoa(
-    unescape(encodeURIComponent(serializeDynamicProgramDefinitionForQdn(definition))),
-  );
+  const identifier = getDynamicProgramQdnIdentifier(definition.programDefinitionId);
 
   await publishResource({
     service: REQUEST_SHOW_QDN_SERVICE,
     name: ownerName,
-    identifier: getDynamicProgramQdnIdentifier(definition.programDefinitionId),
-    data64,
+    identifier,
+    bytesBase64: btoa(
+      unescape(encodeURIComponent(serializeDynamicProgramDefinitionForQdn(definition))),
+    ),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: definition.title,
   });
 }
@@ -87,15 +90,17 @@ export async function persistRequestShowOccurrence(
     throw new Error('Request Show occurrence is invalid.');
   }
 
-  const data64 = btoa(
-    unescape(encodeURIComponent(serializeDynamicProgramOccurrenceForQdn(occurrence))),
-  );
+  const identifier = getRequestShowOccurrenceQdnIdentifier(occurrence.scheduleEventId);
 
   await publishResource({
     service: REQUEST_SHOW_QDN_SERVICE,
     name: ownerName,
-    identifier: getRequestShowOccurrenceQdnIdentifier(occurrence.scheduleEventId),
-    data64,
+    identifier,
+    bytesBase64: btoa(
+      unescape(encodeURIComponent(serializeDynamicProgramOccurrenceForQdn(occurrence))),
+    ),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: `Request Show ${occurrence.scheduleEventId}`,
   });
 }
@@ -129,13 +134,17 @@ async function publishRequestShowOccurrencesBatch(
       throw new Error('Request Show occurrence is invalid.');
     }
 
+    const identifier = getRequestShowOccurrenceQdnIdentifier(occurrence.scheduleEventId);
+
     return {
       service: REQUEST_SHOW_QDN_SERVICE,
       name: ownerName,
-      identifier: getRequestShowOccurrenceQdnIdentifier(occurrence.scheduleEventId),
-      data64: btoa(
+      identifier,
+      bytesBase64: btoa(
         unescape(encodeURIComponent(serializeDynamicProgramOccurrenceForQdn(occurrence))),
       ),
+      fileName: qdnJsonPublishFileName(identifier),
+      mimeType: 'application/json',
       title: `Request Show ${occurrence.scheduleEventId}`,
     };
   });

@@ -18,6 +18,7 @@ import {
 } from './publicationJournal';
 import { computeAudioContentRevision } from './contentRevision';
 import { serializeBulkImportBatch } from './services/bulkImportStorage';
+import { TEST_WRITE_ACCOUNT } from '../../__tests__/support/writeGateBridge';
 import type { BulkImportBatch, BulkImportRow } from './types';
 import type {
   BulkPublicationIntent,
@@ -105,10 +106,14 @@ async function adapterWithCapability(
   >;
   const adapter = createHome2BulkPublicationAdapter({
     transport: transport as unknown as Home2BridgeTransport,
+    writeAccountGate: unlockedAccountGate,
   });
   await adapter.detectCapability();
   return { adapter, transport };
 }
+
+/** Bulk publication is a signed write; adapter tests run it with an unlocked account. */
+const unlockedAccountGate = async (): Promise<unknown> => ({ ...TEST_WRITE_ACCOUNT });
 
 function acceptedPublishResult(identifier: string, fileName: string, size: number) {
   return {
@@ -369,6 +374,54 @@ describe('Home 2 AUDIO publication', () => {
         identifier: expect.stringMatching(/^nodefm-audio-/),
       },
       transactionSignature: 'signature-1',
+    });
+  });
+
+  it('runs the shared account-write gate first and publishes nothing when it refuses', async () => {
+    const gate = vi.fn(async (): Promise<unknown> => {
+      throw new Error('The selected account is locked.');
+    });
+    const transport = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.action === 'SHOW_ACTIONS') {
+        return ['SELECT_QDN_PUBLISH_SOURCE', 'PUBLISH_QDN_RESOURCE'];
+      }
+      if (request.action === 'GET_HOST_INFO') {
+        return { hostName: 'qortium-home', platform: 'desktop', route: { revision: 'r' } };
+      }
+      if (request.action === 'SELECT_QDN_PUBLISH_SOURCE') {
+        return {
+          canceled: false,
+          fileName: 'row-1.mp3',
+          kind: 'file',
+          mimeType: 'audio/mpeg',
+          size: 100,
+          sourceToken: '11111111-1111-4111-8111-111111111111',
+        };
+      }
+      if (request.action === 'PUBLISH_QDN_RESOURCE') {
+        throw new Error('A refused gate must publish nothing.');
+      }
+      throw new Error('unexpected');
+    });
+    const adapter = createHome2BulkPublicationAdapter({
+      transport,
+      writeAccountGate: gate,
+    });
+    await adapter.detectCapability();
+
+    const intent = makeIntent([makeRowIntent('row-1')]);
+    const acquisition = await adapter.acquireRowSource(intent, 'row-1');
+    const result = await adapter.publishRow(intent, acquisition.sources[0]);
+
+    expect(gate).toHaveBeenCalledWith('PUBLISH_QDN_RESOURCE');
+    expect(transport).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PUBLISH_QDN_RESOURCE' }),
+    );
+    expect(result.status).toBe('failed');
+    expect(result.steps[0]).toMatchObject({
+      status: 'failed',
+      step: 'audio',
+      error: { code: 'PUBLICATION_FAILED', message: 'The selected account is locked.' },
     });
   });
 

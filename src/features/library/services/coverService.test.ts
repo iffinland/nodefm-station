@@ -8,6 +8,7 @@ import {
 } from './coverService';
 
 vi.mock('../../../qortium/qdn', () => ({
+  qdnJsonPublishFileName: (identifier: string) => `${identifier}.json`,
   publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
 }));
@@ -48,15 +49,16 @@ describe('publishTrackCoverImage', () => {
       publisherName: 'NodeFM',
       title: 'My Track',
       file,
-      data64: 'aGVsbG8=',
+      bytesBase64: 'aGVsbG8=',
     });
 
     expect(mockedPublish).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'IMAGE',
         name: 'NodeFM',
-        data64: 'aGVsbG8=',
-        filename: 'cover.png',
+        bytesBase64: 'aGVsbG8=',
+        fileName: 'cover.png',
+        mimeType: 'image/png',
         title: 'My Track cover',
       }),
     );
@@ -78,7 +80,7 @@ describe('publishTrackCoverImage', () => {
         publisherName: 'NodeFM',
         title: 'My Track',
         file: new File(['cover'], 'cover.png', { type: 'image/png' }),
-        data64: 'aGVsbG8=',
+        bytesBase64: 'aGVsbG8=',
       }),
     ).rejects.toThrow(/not accepted/i);
   });
@@ -104,7 +106,9 @@ describe('publishTrackCoverImage', () => {
       service: 'JSON',
       name: 'NodeFM',
       identifier: 'nodefm-track-track-1',
-      data64: 'dHJhY2s=',
+      bytesBase64: 'dHJhY2s=',
+      fileName: 'nodefm-track-track-1.json',
+      mimeType: 'application/json',
       title: 'Updated Track',
     });
     mockedBatchPublish.mockImplementation(async (resources) => ({
@@ -130,7 +134,7 @@ describe('publishTrackCoverImage', () => {
       title: 'Track',
       publisherName: 'NodeFM',
       file,
-      data64: 'aGVsbG8=',
+      bytesBase64: 'aGVsbG8=',
       metadata: { title: 'Updated Track' },
     });
 
@@ -165,7 +169,9 @@ describe('publishTrackCoverImage', () => {
       service: 'JSON',
       name: 'NodeFM',
       identifier: 'nodefm-track-track-1',
-      data64: 'dHJhY2s=',
+      bytesBase64: 'dHJhY2s=',
+      fileName: 'nodefm-track-track-1.json',
+      mimeType: 'application/json',
       title: 'Track',
     });
     mockedBatchPublish.mockResolvedValue({
@@ -181,7 +187,7 @@ describe('publishTrackCoverImage', () => {
         title: 'Track',
         publisherName: 'NodeFM',
         file: new File(['cover'], 'cover.png', { type: 'image/png' }),
-        data64: 'aGVsbG8=',
+        bytesBase64: 'aGVsbG8=',
       }),
     ).rejects.toThrow(/Failed to save track cover/);
 

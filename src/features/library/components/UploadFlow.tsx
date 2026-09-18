@@ -185,7 +185,6 @@ export function UploadFlow({
         publisherName,
         audioIdentifier,
         audioSourceToken: state.audioSource.sourceToken,
-        audioFileName: state.audioSource.fileName,
         title: trackTitle,
         cover:
           state.coverFile && state.coverBase64
@@ -193,7 +192,7 @@ export function UploadFlow({
                 publisherName,
                 title: trackTitle,
                 file: state.coverFile,
-                data64: state.coverBase64.split(',')[1] ?? '',
+                bytesBase64: state.coverBase64.split(',')[1] ?? '',
               }
             : undefined,
       });

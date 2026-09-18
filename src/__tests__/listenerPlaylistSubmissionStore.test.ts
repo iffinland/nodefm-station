@@ -8,6 +8,7 @@ vi.mock('../qortium/qdn', () => ({
   fetchQdnResourceData: vi.fn(),
   publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
+  qdnJsonPublishFileName: (identifier: string) => `${identifier}.json`,
   searchQdnResources: vi.fn(),
 }));
 
@@ -142,14 +143,18 @@ describe('listener playlist submission store', () => {
       service: 'PLAYLIST',
       name: ownerName,
       identifier: `nodefm-playlist-${playlist.playlistId}`,
-      data64: 'cGxheWxpc3Q=',
+      bytesBase64: 'cGxheWxpc3Q=',
+      fileName: `nodefm-playlist-${playlist.playlistId}.json`,
+      mimeType: 'application/json',
       title: playlist.title,
     }));
     mockedVersionPublishResource.mockImplementation((version, ownerName) => ({
       service: 'JSON',
       name: ownerName,
       identifier: `nodefm-playlist-version-${version.versionId}`,
-      data64: 'dmVyc2lvbg==',
+      bytesBase64: 'dmVyc2lvbg==',
+      fileName: `nodefm-playlist-version-${version.versionId}.json`,
+      mimeType: 'application/json',
       title: `Version ${version.versionNumber}`,
     }));
 

@@ -5,7 +5,7 @@
  * All auth state flows through this module.
  * ============================================================ */
 
-import { getSelectedAccount, sendBridgeRequest } from './bridge';
+import { getSelectedAccount } from './bridge';
 
 export type AuthState =
   | { status: 'loading' }
@@ -131,25 +131,4 @@ export function listenForAccountChanges(onChange: () => void): () => void {
   window.addEventListener('message', handler);
 
   return () => window.removeEventListener('message', handler);
-}
-
-// ── Publish QDN Resource ────────────────────────────────────────────
-
-export type PublishResourceInput = {
-  service: string;
-  identifier: string;
-  name?: string;
-  title?: string;
-  description?: string;
-  category?: string;
-  tags?: string[];
-  data64: string;
-  filename?: string;
-};
-
-export function publishQdnResource(input: PublishResourceInput): Promise<unknown> {
-  return sendBridgeRequest({
-    action: 'PUBLISH_QDN_RESOURCE',
-    ...input,
-  });
 }

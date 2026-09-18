@@ -11,6 +11,7 @@ import type { Playlist, PlaylistVersion, PlaylistVersionTrack } from '../../../t
 import {
   fetchQdnResourceData,
   publishMultipleResources,
+  qdnJsonPublishFileName,
   publishResource,
   searchQdnResources,
 } from '../../../qortium/qdn';
@@ -171,11 +172,17 @@ export async function submitListenerPlaylist(input: {
     },
   });
 
+  const identifier = getListenerPlaylistSubmissionQdnIdentifier(submission.submissionId);
+
   const result = await publishResource({
     service: 'JSON',
     name: input.listenerName.trim(),
-    identifier: getListenerPlaylistSubmissionQdnIdentifier(submission.submissionId),
-    data64: btoa(unescape(encodeURIComponent(serializeListenerPlaylistSubmission(submission)))),
+    identifier,
+    bytesBase64: btoa(
+      unescape(encodeURIComponent(serializeListenerPlaylistSubmission(submission))),
+    ),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: submission.playlistTitle,
     description: `Playlist submitted by ${submission.listenerName}`,
   });
@@ -577,15 +584,18 @@ export async function acceptListenerPlaylistSubmission(
     moderatorAddress: ownerAddress,
   });
 
+  const moderationIdentifier = getListenerPlaylistSubmissionModerationQdnIdentifier(
+    review.submission.submissionId,
+  );
   const moderationResource: PublishMultipleResource = {
     service: 'JSON',
     name: stationPublisherName.trim(),
-    identifier: getListenerPlaylistSubmissionModerationQdnIdentifier(
-      review.submission.submissionId,
-    ),
-    data64: btoa(
+    identifier: moderationIdentifier,
+    bytesBase64: btoa(
       unescape(encodeURIComponent(serializeListenerPlaylistSubmissionModeration(moderation))),
     ),
+    fileName: qdnJsonPublishFileName(moderationIdentifier),
+    mimeType: 'application/json',
     title: `Playlist submission accepted: ${review.submission.playlistTitle}`,
   };
 
@@ -602,7 +612,6 @@ export async function acceptListenerPlaylistSubmission(
     finalPlaylist,
     stationPublisherName.trim(),
   ).identifier;
-  const moderationIdentifier = moderationResource.identifier;
 
   const response = await publishMultipleResources(resources);
   const versionPublished = response.accepted
@@ -689,15 +698,19 @@ export async function rejectListenerPlaylistSubmission(
     moderatorAddress: ownerAddress,
   });
 
+  const moderationIdentifier = getListenerPlaylistSubmissionModerationQdnIdentifier(
+    review.submission.submissionId,
+  );
+
   await publishResource({
     service: 'JSON',
     name: stationPublisherName.trim(),
-    identifier: getListenerPlaylistSubmissionModerationQdnIdentifier(
-      review.submission.submissionId,
-    ),
-    data64: btoa(
+    identifier: moderationIdentifier,
+    bytesBase64: btoa(
       unescape(encodeURIComponent(serializeListenerPlaylistSubmissionModeration(moderation))),
     ),
+    fileName: qdnJsonPublishFileName(moderationIdentifier),
+    mimeType: 'application/json',
     title: `Playlist submission rejected: ${review.submission.playlistTitle}`,
   });
 

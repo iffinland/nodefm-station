@@ -2,17 +2,15 @@
  * NodeFM Station — QDN Publish Filename Tests
  *
  * Covers the Unicode/security boundary exercised by local file
- * publication flows.
+ * publication flows against the Home 2.1 staging contract.
  * ============================================================ */
 
 import { describe, expect, it } from 'vitest';
-import {
-  isQdnTransportFilenameSafe,
-  normalizeQdnPublishFilename,
-} from '../qortium/publishFilename';
+import { isQdnPublishFilenameSafe, resolveQdnPublishFilename } from '../qortium/publishFilename';
 
-describe('normalizeQdnPublishFilename', () => {
+describe('resolveQdnPublishFilename', () => {
   it.each([
+    'Metsajärve öö äöõü — русский тест.mp3',
     'Metsajärve öö.mp3',
     'Põhjamaa hääl.flac',
     'Üks lugu.ogg',
@@ -21,13 +19,23 @@ describe('normalizeQdnPublishFilename', () => {
     'café.mp3',
     'ファイル.mp3',
     '歌曲.flac',
-  ])('maps Unicode filename %j to an ASCII transport filename', (filename) => {
-    const result = normalizeQdnPublishFilename(filename);
+  ])('keeps the original Unicode filename %j for Home staging', (filename) => {
+    const result = resolveQdnPublishFilename(filename);
 
     expect(result.display).toBe(filename);
-    expect(result.transport).not.toBe(filename);
-    expect(result.transport).toMatch(/^nodefm-upload-[a-z0-9]+\.(?:mp3|flac|ogg|wav|png|bin)$/);
-    expect(result.transport).toMatch(/^[\x20-\x7e]+$/);
+    expect(result.staged).toBe(filename);
+    expect(isQdnPublishFilenameSafe(filename)).toBe(true);
+  });
+
+  it('preserves Estonian and Cyrillic characters, spaces and the em dash', () => {
+    const filename = 'Metsajärve öö äöõü — русский тест.mp3';
+    const result = resolveQdnPublishFilename(filename);
+
+    for (const character of ['ä', 'ö', 'õ', 'ü', '—', 'р', 'у', 'с', 'к', 'и', 'й', ' ']) {
+      expect(result.staged).toContain(character);
+    }
+
+    expect(result.staged.endsWith('.mp3')).toBe(true);
   });
 
   it.each([
@@ -39,33 +47,34 @@ describe('normalizeQdnPublishFilename', () => {
     'multiple.dots.mp3',
     'camelCase.M4A',
   ])('preserves normal ASCII filename %j unchanged', (filename) => {
-    expect(normalizeQdnPublishFilename(filename)).toEqual({
+    expect(resolveQdnPublishFilename(filename)).toEqual({
       display: filename,
-      transport: filename,
+      staged: filename,
     });
-    expect(isQdnTransportFilenameSafe(filename)).toBe(true);
+    expect(isQdnPublishFilenameSafe(filename)).toBe(true);
   });
 
   it('uses a fallback for missing filenames', () => {
-    expect(normalizeQdnPublishFilename('', 'qdn-cover')).toEqual({
+    expect(resolveQdnPublishFilename('', 'qdn-cover')).toEqual({
       display: 'qdn-cover',
-      transport: 'qdn-cover',
+      staged: 'qdn-cover',
     });
-    expect(normalizeQdnPublishFilename(undefined, 'qdn-cover').transport).toBe('qdn-cover');
+    expect(resolveQdnPublishFilename(undefined, 'qdn-cover').staged).toBe('qdn-cover');
   });
 
-  it('preserves the original filename for display when transport is generated', () => {
-    const result = normalizeQdnPublishFilename('Põhjamaa hääl.flac');
+  it('does not transliterate or hash Unicode', () => {
+    const result = resolveQdnPublishFilename('Põhjamaa.mp3');
 
-    expect(result.display).toBe('Põhjamaa hääl.flac');
-    expect(result.transport.endsWith('.flac')).toBe(true);
+    expect(result.staged).toBe('Põhjamaa.mp3');
+    expect(result.staged).not.toContain('Pohjamaa');
+    expect(result.staged).not.toMatch(/^nodefm-upload-/);
   });
 
-  it('does not transliterate Unicode', () => {
-    const result = normalizeQdnPublishFilename('Põhjamaa.mp3');
+  it('normalizes an NFD filename to NFC without losing characters', () => {
+    const decomposed = 'Metsaja\u0308rve o\u0308o\u0308.mp3';
+    const result = resolveQdnPublishFilename(decomposed);
 
-    expect(result.transport).not.toContain('Pohjamaa');
-    expect(result.display).toBe('Põhjamaa.mp3');
+    expect(result.staged).toBe('Metsajärve öö.mp3');
   });
 });
 
@@ -83,11 +92,11 @@ describe('unsafe QDN publish filename rejection', () => {
     'file\nname.mp3',
     'file\tname.mp3',
   ])('rejects dangerous filename/path input %j', (filename) => {
-    expect(() => normalizeQdnPublishFilename(filename)).toThrow(/Unsafe QDN publish filename/);
+    expect(() => resolveQdnPublishFilename(filename)).toThrow(/Unsafe QDN publish filename/);
   });
 
   it('rejects a Unicode filename only when it also contains a path separator', () => {
-    expect(() => normalizeQdnPublishFilename('Põhjamaa/../hääl.flac')).toThrow(
+    expect(() => resolveQdnPublishFilename('Põhjamaa/../hääl.flac')).toThrow(
       /Unsafe QDN publish filename/,
     );
   });

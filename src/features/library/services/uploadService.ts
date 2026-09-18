@@ -2,10 +2,11 @@
  * NodeFM Station — Upload Audio Publication Service
  *
  * Scoped service for the owner "Upload Audio" flow. It prepares the
- * AUDIO (sourceToken) and optional IMAGE (data64) resources as one
- * `PUBLISH_MULTIPLE_QDN_RESOURCES` approval, then publishes the final
- * Track JSON metadata in a second approval after the audio duration
- * has been resolved from the now-published AUDIO resource.
+ * AUDIO (Home-issued sourceToken from SELECT_QDN_PUBLISH_SOURCE) and
+ * optional IMAGE (app-held bytes staged with STAGE_QDN_PUBLISH_SOURCE)
+ * resources as one `PUBLISH_MULTIPLE_QDN_RESOURCES` approval, then
+ * publishes the final Track JSON metadata in a second approval after the
+ * audio duration has been resolved from the now-published AUDIO resource.
  *
  * Home 1.8.0's SELECT_QDN_PUBLISH_SOURCE returns only a sourceToken,
  * file name, kind, and size. It deliberately does not return file
@@ -28,7 +29,6 @@ export type PublishUploadMediaResourcesInput = {
   publisherName: string;
   audioIdentifier: string;
   audioSourceToken: string;
-  audioFileName: string;
   title: string;
   cover?: PublishTrackCoverInput;
 };
@@ -63,7 +63,6 @@ export function buildUploadAudioPublishResource(input: {
   publisherName: string;
   audioIdentifier: string;
   audioSourceToken: string;
-  audioFileName: string;
   title: string;
 }): PublishMultipleResource {
   if (!input.publisherName.trim()) {
@@ -84,7 +83,6 @@ export function buildUploadAudioPublishResource(input: {
     identifier: input.audioIdentifier.trim(),
     sourceToken: input.audioSourceToken.trim(),
     title: input.title.trim(),
-    filename: input.audioFileName,
   };
 }
 
@@ -99,7 +97,6 @@ export async function publishUploadMediaResources(
     publisherName: input.publisherName,
     audioIdentifier: input.audioIdentifier,
     audioSourceToken: input.audioSourceToken,
-    audioFileName: input.audioFileName,
     title: input.title,
   });
 
@@ -108,7 +105,7 @@ export async function publishUploadMediaResources(
         publisherName: input.cover.publisherName,
         title: input.cover.title,
         file: input.cover.file,
-        data64: input.cover.data64,
+        bytesBase64: input.cover.bytesBase64,
       })
     : undefined;
 

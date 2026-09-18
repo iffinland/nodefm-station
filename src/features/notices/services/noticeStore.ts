@@ -10,6 +10,7 @@
 import {
   deleteQdnResource,
   fetchQdnResourceData,
+  qdnJsonPublishFileName,
   publishResource,
   searchQdnResources,
 } from '../../../qortium/qdn';
@@ -304,13 +305,14 @@ export async function saveNotice(
   }
 
   const identifier = getNoticeQdnIdentifier(notice.noticeId);
-  const data64 = btoa(unescape(encodeURIComponent(serializeNoticeForQdn(notice))));
 
   await publishResource({
     service: NOTICE_QDN_SERVICE,
     name: publisherName.trim(),
     identifier,
-    data64,
+    bytesBase64: btoa(unescape(encodeURIComponent(serializeNoticeForQdn(notice)))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: notice.title ?? 'Station Notice',
     description: notice.message,
   });

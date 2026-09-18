@@ -12,6 +12,7 @@
  * ============================================================ */
 
 import { sendBridgeRequest } from '../../qortium/bridge';
+import { requireAccountWrite } from '../../qortium/accountWriteGate';
 import {
   getSubmissionAudioQdnIdentifier,
   getSubmissionCoverQdnIdentifier,
@@ -546,10 +547,19 @@ export function createHome2BulkPublicationAdapter(
   options: {
     transport?: Home2BridgeTransport;
     now?: () => string;
+    /**
+     * The shared NodeFM account-write gate. Bulk publication is a signed QDN
+     * write like every other publish path, so it goes through the same gate
+     * (locked account → Home's own unlock dialog → the original write resumes).
+     * Injectable for the same reason `transport` is: adapter tests drive a
+     * synthetic transport and must not reach the real bridge.
+     */
+    writeAccountGate?: (action: string) => Promise<unknown>;
   } = {},
 ): Home2BulkPublicationAdapter {
   const transport = options.transport ?? (sendBridgeRequest as Home2BridgeTransport);
   const now = options.now ?? (() => new Date().toISOString());
+  const writeAccountGate = options.writeAccountGate ?? requireAccountWrite;
 
   const state: Home2AdapterState = {
     capability: unavailableBulkPublicationAdapter.capability(),
@@ -1086,6 +1096,11 @@ export function createHome2BulkPublicationAdapter(
 
     let raw: unknown;
     try {
+      // Signed QDN write: the shared account-write gate runs first, so a locked
+      // account is unlocked through Home's own dialog and this exact publication
+      // resumes without a second user action. A gate failure (cancelled unlock,
+      // no selected account) leaves the handle unconsumed and publishes nothing.
+      await writeAccountGate(ACTION_PUBLISH);
       raw = await requestUnwrapped(transport, request);
     } catch (error) {
       const classified = classifyError(error, ACTION_PUBLISH);

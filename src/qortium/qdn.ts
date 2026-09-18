@@ -10,22 +10,102 @@
 
 import { sendBridgeRequest } from './bridge';
 import type { QdnResourceRef } from '../types/domain';
-import { normalizeQdnPublishFilename } from './publishFilename';
+import { resolveQdnPublishFilename } from './publishFilename';
+import { requireAccountWrite } from './accountWriteGate';
 import { QdnResourceReadError, isConfirmedQdnNotFoundError } from './qdnReadError';
 
 // ── Publish ─────────────────────────────────────────────────────────
+//
+// Qortium Home 2.1 publishing contract: a publish request carries only a
+// Home-issued `sourceToken` plus mutable metadata. Home refuses inline bytes
+// and path-shaped fields (`data64`, `base64`, `filename`, `mimeType`, `file`,
+// `path`, ...) and derives the fee itself, so NodeFM never emits them.
+//
+// App-held bytes are handed to `STAGE_QDN_PUBLISH_SOURCE`, which returns an
+// ordinary Home source token bound to the app, tab, account, node route and
+// route revision (30-minute TTL). Staging grants nothing by itself: the publish
+// action still runs Home's normal approval prompt.
+//
+// Root cause and contract evidence: the 2026-09-16 NodeFM Home 2.1
+// compatibility audit and the pinned Home v2.1.0-beta.11 source.
 
-export type PublishInput = {
+/** Publish-source acquisition Home can perform for this app. */
+export type QdnPublishSourceKind = 'stage' | 'select';
+
+const ACTION_SHOW_ACTIONS = 'SHOW_ACTIONS';
+export const ACTION_SELECT_PUBLISH_SOURCE = 'SELECT_QDN_PUBLISH_SOURCE';
+export const ACTION_STAGE_PUBLISH_SOURCE = 'STAGE_QDN_PUBLISH_SOURCE';
+export const ACTION_PUBLISH_RESOURCE = 'PUBLISH_QDN_RESOURCE';
+export const ACTION_PUBLISH_MULTIPLE_RESOURCES = 'PUBLISH_MULTIPLE_QDN_RESOURCES';
+
+/**
+ * Fields Home 2 refuses on a publish request. Checked defensively at the wire
+ * boundary so a refused encoding can never leave NodeFM again.
+ */
+const REFUSED_PUBLISH_FIELDS = [
+  'base64',
+  'bytes',
+  'bytesBase64',
+  'data',
+  'data64',
+  'dataBase64',
+  'fee',
+  'file',
+  'fileName',
+  'filePath',
+  'filename',
+  'filepath',
+  'mimeType',
+  'path',
+  'source',
+  'sourceBase64',
+  'uri',
+] as const;
+
+/** Legacy publish inputs NodeFM must not accept again. */
+const REFUSED_PUBLISH_INPUT_FIELDS = [
+  'base64',
+  'data',
+  'data64',
+  'dataBase64',
+  'fee',
+  'file',
+  'filePath',
+  'filename',
+  'filepath',
+  'path',
+  'source',
+  'sourceBase64',
+  'uri',
+] as const;
+
+/**
+ * Source for one publish item.
+ *
+ * Exactly one acquisition path is used per item:
+ * - `sourceToken` — already issued by Home (native picker or an earlier stage);
+ * - `bytesBase64` + `fileName` — app-held bytes staged by this boundary.
+ *
+ * `mimeType` is bound to the staged blob only; it is never published.
+ */
+export type QdnPublishSourceInput = {
+  /** Home-issued source token from SELECT_QDN_PUBLISH_SOURCE or staging. */
+  sourceToken?: string;
+  /** App-held bytes (base64) that this boundary stages before publishing. */
+  bytesBase64?: string;
+  /** Filename bound to the staged bytes. Required with `bytesBase64`. */
+  fileName?: string;
+  /** MIME type bound to the staged bytes. Never sent on a publish request. */
+  mimeType?: string;
+};
+
+export type PublishInput = QdnPublishSourceInput & {
   /** QDN service name (e.g. 'AUDIO', 'IMAGE', 'JSON', 'PLAYLIST') */
   service: string;
   /** Publishing name (unique per service + identifier) */
   name: string;
   /** Optional identifier (use 'default' for standard) */
   identifier?: string;
-  /** Base64-encoded resource data (for small resources) */
-  data64?: string;
-  /** Source token from SELECT_QDN_PUBLISH_SOURCE (for large files) */
-  sourceToken?: string;
   /** Human-readable title */
   title?: string;
   /** Description */
@@ -34,11 +114,9 @@ export type PublishInput = {
   category?: string;
   /** Tags */
   tags?: string[];
-  /** Original filename */
-  filename?: string;
-  /** Fee (0 for public nodes) */
-  fee?: number;
 };
+
+export type PublishMultipleResource = PublishInput;
 
 export type PublishResult = {
   accepted: boolean;
@@ -51,42 +129,29 @@ export type PublishResult = {
   transactionSignature?: string;
 };
 
-export type PublishMultipleResource = {
-  /** QDN service name (e.g. 'JSON', 'IMAGE') */
-  service: string;
-  /** Publishing name (unique per service + identifier) */
+export type MultiplePublishResourceCoordinate = {
+  identifier: string | null;
   name: string;
-  /** Optional identifier (use 'default' for standard) */
-  identifier?: string;
-  /** Base64-encoded resource data for inline resources */
-  data64?: string;
-  /** Source token from SELECT_QDN_PUBLISH_SOURCE for large files */
-  sourceToken?: string;
-  title?: string;
-  description?: string;
-  category?: string;
-  tags?: string[];
-  filename?: string;
-  fee?: number;
+  service: string;
 };
 
 export type MultiplePublishPublishedResource = {
   result: unknown;
-  resource: {
-    identifier: string | null;
-    name: string;
-    service: string;
-  };
+  resource: MultiplePublishResourceCoordinate;
   transactionSignature: string;
 };
 
 export type MultiplePublishFailedResource = {
   error: string;
-  resource: {
-    identifier: string | null;
-    name: string;
-    service: string;
-  };
+  /**
+   * Present when Home signed the transaction but could not confirm the
+   * broadcast outcome. Such an item must be reconciled, never blindly
+   * re-published.
+   */
+  errorType?: string;
+  outcome?: 'unknown';
+  resource: MultiplePublishResourceCoordinate;
+  transactionSignature?: string;
 };
 
 export type MultiplePublishResult = {
@@ -96,46 +161,327 @@ export type MultiplePublishResult = {
   failures: MultiplePublishFailedResource[];
 };
 
+/** Home 2's per-request batch ceiling. Larger operations are chunked. */
+export const QDN_PUBLISH_BATCH_MAX_ITEMS = 10;
+
+export type QdnPublishCapability = {
+  status: 'available' | 'unsupported' | 'unknown';
+  stageSource: boolean;
+  selectSource: boolean;
+  publish: boolean;
+  publishMultiple: boolean;
+  /** The action names Home advertised, or null when SHOW_ACTIONS failed. */
+  advertisedActions: readonly string[] | null;
+};
+
 /**
- * Publish a QDN resource.
- *
- * Small resources (metadata JSON) use `data64`.
- * Large files (audio) should use `sourceToken` from `selectPublishSource()`.
+ * Raised when the runtime does not advertise the Home 2 stage/token
+ * publishing actions. NodeFM fails closed instead of falling back to the
+ * refused Home 1.x inline contract.
  */
-export async function publishResource(input: PublishInput): Promise<PublishResult> {
+export class QdnPublishSourceUnsupportedError extends Error {
+  readonly action: string;
+
+  constructor(action: string, advertisedActions: readonly string[] | null) {
+    super(
+      `This Qortium Home runtime does not advertise ${action}. NodeFM publishes only ` +
+        'through the Home 2 stage/token contract: app-held bytes are staged with ' +
+        'STAGE_QDN_PUBLISH_SOURCE and published with a Home-issued sourceToken. ' +
+        'NodeFM does not fall back to the legacy Home 1.x inline data64/filename ' +
+        `contract, which Home 2 refuses.${
+          advertisedActions
+            ? ''
+            : ' SHOW_ACTIONS returned no action list, so the runtime cannot be identified.'
+        }`,
+    );
+    this.name = 'QdnPublishSourceUnsupportedError';
+    this.action = action;
+  }
+}
+
+let cachedAdvertisedActions: ReadonlySet<string> | null = null;
+let inFlightAdvertisedActions: Promise<ReadonlySet<string> | null> | null = null;
+
+/** Drop the cached SHOW_ACTIONS result (account/route change, tests). */
+export function resetQdnPublishCapabilityCache(): void {
+  cachedAdvertisedActions = null;
+  inFlightAdvertisedActions = null;
+}
+
+function normalizeAdvertisedActions(value: unknown): ReadonlySet<string> | null {
+  if (!Array.isArray(value)) return null;
+
+  const names = value.filter((entry): entry is string => typeof entry === 'string');
+
+  return names.length === value.length ? new Set(names) : null;
+}
+
+async function loadAdvertisedActions(): Promise<ReadonlySet<string> | null> {
+  if (cachedAdvertisedActions) return cachedAdvertisedActions;
+
+  inFlightAdvertisedActions ??= sendBridgeRequest<unknown>({ action: ACTION_SHOW_ACTIONS })
+    .then(normalizeAdvertisedActions)
+    .catch(() => null)
+    .finally(() => {
+      inFlightAdvertisedActions = null;
+    });
+
+  const actions = await inFlightAdvertisedActions;
+
+  if (actions) cachedAdvertisedActions = actions;
+
+  return actions;
+}
+
+export async function getQdnPublishCapability(): Promise<QdnPublishCapability> {
+  const actions = await loadAdvertisedActions();
+  const has = (action: string) => Boolean(actions?.has(action));
+
+  return {
+    status: actions ? (has(ACTION_STAGE_PUBLISH_SOURCE) ? 'available' : 'unsupported') : 'unknown',
+    stageSource: has(ACTION_STAGE_PUBLISH_SOURCE),
+    selectSource: has(ACTION_SELECT_PUBLISH_SOURCE),
+    publish: has(ACTION_PUBLISH_RESOURCE),
+    publishMultiple: has(ACTION_PUBLISH_MULTIPLE_RESOURCES),
+    advertisedActions: actions ? [...actions] : null,
+  };
+}
+
+export async function isQdnPublishSourceSupported(kind: QdnPublishSourceKind): Promise<boolean> {
+  const actions = await loadAdvertisedActions();
+
+  return actions?.has(kind === 'stage' ? ACTION_STAGE_PUBLISH_SOURCE : ACTION_SELECT_PUBLISH_SOURCE)
+    ? true
+    : false;
+}
+
+async function requireQdnPublishSourceSupported(kind: QdnPublishSourceKind): Promise<void> {
+  const action = kind === 'stage' ? ACTION_STAGE_PUBLISH_SOURCE : ACTION_SELECT_PUBLISH_SOURCE;
+
+  if (await isQdnPublishSourceSupported(kind)) return;
+
+  throw new QdnPublishSourceUnsupportedError(action, null);
+}
+
+function assertNoLegacyPublishInput(value: object, action: string): void {
+  const record = value as Record<string, unknown>;
+
+  for (const field of REFUSED_PUBLISH_INPUT_FIELDS) {
+    const candidate = record[field];
+
+    if (candidate !== undefined && candidate !== null && candidate !== '') {
+      throw new Error(
+        `${action} does not accept ${field}: NodeFM publishes through the Home 2 ` +
+          'stage/token contract only.',
+      );
+    }
+  }
+}
+
+function assertCleanPublishPayload(payload: Record<string, unknown>, action: string): void {
+  for (const field of REFUSED_PUBLISH_FIELDS) {
+    const candidate = payload[field];
+
+    if (candidate !== undefined && candidate !== null && candidate !== '') {
+      throw new Error(
+        `${action} payload must be token-only: ${field} is refused by Home 2 publishing.`,
+      );
+    }
+  }
+}
+
+function coordinateOf(
+  resource: Pick<PublishInput, 'identifier' | 'name' | 'service'>,
+): MultiplePublishResourceCoordinate {
+  return {
+    identifier: resource.identifier ?? null,
+    name: resource.name,
+    service: resource.service,
+  };
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function buildPublishRequestPayload(
+  resource: PublishInput,
+  sourceToken: string,
+  action: string,
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {
-    action: 'PUBLISH_QDN_RESOURCE' as const,
-    service: input.service,
-    name: input.name,
+    action,
+    service: resource.service,
+    name: resource.name,
+    sourceToken,
   };
 
-  if (input.identifier) payload.identifier = input.identifier;
-  if (input.data64) payload.data64 = input.data64;
-  if (input.sourceToken) payload.sourceToken = input.sourceToken;
-  if (input.title) payload.title = input.title;
-  if (input.description) payload.description = input.description;
-  if (input.category) payload.category = input.category;
-  if (input.tags?.length) payload.tags = input.tags;
-  if (input.filename) {
-    // The bridge ignores this field for sourceToken publications, so only
-    // inline data publications are normalized here. SourceToken publications
-    // still carry the original selected filename at the Qortium Home layer.
-    payload.filename = input.sourceToken
-      ? input.filename
-      : normalizeQdnPublishFilename(input.filename).transport;
+  if (resource.identifier) payload.identifier = resource.identifier;
+  if (resource.title) payload.title = resource.title;
+  if (resource.description) payload.description = resource.description;
+  if (resource.category) payload.category = resource.category;
+  if (resource.tags?.length) payload.tags = resource.tags;
+
+  assertCleanPublishPayload(payload, action);
+
+  return payload;
+}
+
+/**
+ * Hand app-held bytes to Home and return the Home-issued source token.
+ *
+ * The publish source is a blob (`kind: 'blob'`) held in Home's bounded source
+ * store until the publish prompt is approved or the token expires.
+ */
+export type StageQdnPublishSourceInput = {
+  bytesBase64: string;
+  fileName: string;
+  mimeType?: string;
+};
+
+export type StageQdnPublishSourceResult = {
+  sourceToken: string;
+  fileName: string;
+  kind: string;
+  size: number;
+  mimeType?: string | null;
+};
+
+export async function stageQdnPublishSource(
+  input: StageQdnPublishSourceInput,
+): Promise<StageQdnPublishSourceResult> {
+  const bytesBase64 = input.bytesBase64?.trim() ?? '';
+  const fileName = input.fileName?.trim() ?? '';
+
+  if (!bytesBase64) {
+    throw new Error('App-held bytes (bytesBase64) are required to stage a publish source.');
   }
-  if (typeof input.fee === 'number') payload.fee = input.fee;
+
+  if (!fileName) {
+    throw new Error('A fileName is required to stage a publish source.');
+  }
+
+  await requireQdnPublishSourceSupported('stage');
+
+  // Home 2.1 sanitizes the staged name itself (leaf-only, bounded length) and
+  // preserves Unicode, so the original filename is what Home publishes. NodeFM
+  // only rejects path/control input; it never transliterates or ASCII-normalizes
+  // a source filename (Home issue #330 / PR #337).
+  const stagedFileName = resolveQdnPublishFilename(fileName).staged;
+
+  const result = (await sendBridgeRequest({
+    action: ACTION_STAGE_PUBLISH_SOURCE,
+    bytesBase64,
+    fileName: stagedFileName,
+    ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+  })) as unknown;
+
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    throw new Error('STAGE_QDN_PUBLISH_SOURCE returned a malformed source descriptor.');
+  }
+
+  const descriptor = result as Record<string, unknown>;
+  const sourceToken =
+    typeof descriptor.sourceToken === 'string' ? descriptor.sourceToken.trim() : '';
+
+  if (!sourceToken) {
+    throw new Error('STAGE_QDN_PUBLISH_SOURCE did not return a Home-issued sourceToken.');
+  }
+
+  return {
+    sourceToken,
+    fileName: typeof descriptor.fileName === 'string' ? descriptor.fileName : stagedFileName,
+    kind: typeof descriptor.kind === 'string' ? descriptor.kind : 'blob',
+    size: typeof descriptor.size === 'number' ? descriptor.size : 0,
+    mimeType:
+      typeof descriptor.mimeType === 'string' || descriptor.mimeType === null
+        ? (descriptor.mimeType as string | null)
+        : undefined,
+  };
+}
+
+async function resolvePublishSourceToken(resource: PublishInput): Promise<string> {
+  const sourceToken = resource.sourceToken?.trim();
+
+  if (sourceToken) return sourceToken;
+
+  const bytesBase64 = resource.bytesBase64?.trim();
+
+  if (!bytesBase64) {
+    throw new Error(
+      'A Home-issued sourceToken or app-held bytes are required to publish a QDN resource.',
+    );
+  }
+
+  const staged = await stageQdnPublishSource({
+    bytesBase64,
+    fileName: resource.fileName?.trim() ?? '',
+    ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+  });
+
+  return staged.sourceToken;
+}
+
+/**
+ * Publish one QDN resource through the Home 2 stage/token contract.
+ *
+ * A caller either passes an already-issued `sourceToken` (native picker) or
+ * app-held `bytesBase64`, which this boundary stages first. The publish
+ * request itself is always token-only.
+ */
+export async function publishResource(input: PublishInput): Promise<PublishResult> {
+  assertNoLegacyPublishInput(input, ACTION_PUBLISH_RESOURCE);
+  await requireAccountWrite(ACTION_PUBLISH_RESOURCE);
+
+  const sourceToken = await resolvePublishSourceToken(input);
+  const payload = buildPublishRequestPayload(input, sourceToken, ACTION_PUBLISH_RESOURCE);
 
   return sendBridgeRequest(payload) as Promise<PublishResult>;
 }
 
+function normalizePublishResponse(raw: unknown, action: string): MultiplePublishResult {
+  const record =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+
+  const published = Array.isArray(record.published)
+    ? (record.published as MultiplePublishPublishedResource[])
+    : [];
+  const failures = Array.isArray(record.failures)
+    ? (record.failures as MultiplePublishFailedResource[])
+    : [];
+
+  return {
+    ...(record as Omit<MultiplePublishResult, 'published' | 'failures'>),
+    accepted: record.accepted === true,
+    action: typeof record.action === 'string' ? record.action : action,
+    published: [...published],
+    failures: [...failures],
+  };
+}
+
+function chunkResources(
+  resources: readonly PublishMultipleResource[],
+): PublishMultipleResource[][] {
+  const chunks: PublishMultipleResource[][] = [];
+
+  for (let index = 0; index < resources.length; index += QDN_PUBLISH_BATCH_MAX_ITEMS) {
+    chunks.push(resources.slice(index, index + QDN_PUBLISH_BATCH_MAX_ITEMS));
+  }
+
+  return chunks;
+}
+
 /**
- * Publish several QDN resources through one Home approval request.
+ * Publish several QDN resources through the Home 2 batch contract.
  *
- * This uses the current `PUBLISH_MULTIPLE_QDN_RESOURCES` bridge action.
- * Home processes resources sequentially; each is still its own QDN
- * transaction. The result therefore has explicit `published` and
- * `failures` arrays and must not be treated as atomic.
+ * Each request carries at most `QDN_PUBLISH_BATCH_MAX_ITEMS` token-only items
+ * with distinct source tokens, so larger logical operations are chunked. Home
+ * publishes each item as its own QDN transaction; the result therefore has
+ * explicit `published` and `failures` arrays and must not be treated as atomic.
+ *
+ * Items Home signed without confirming a broadcast carry `outcome: 'unknown'`.
+ * They are reported as failures and must be reconciled, never blindly
+ * re-published.
  */
 export async function publishMultipleResources(
   resources: readonly PublishMultipleResource[],
@@ -144,33 +490,102 @@ export async function publishMultipleResources(
     throw new Error('At least one resource is required for QDN batch publication.');
   }
 
-  const payloadResources = resources.map((resource) => {
-    const payload: Record<string, unknown> = {
-      service: resource.service,
-      name: resource.name,
-    };
+  await requireAccountWrite(ACTION_PUBLISH_MULTIPLE_RESOURCES);
 
-    if (resource.identifier) payload.identifier = resource.identifier;
-    if (resource.data64) payload.data64 = resource.data64;
-    if (resource.sourceToken) payload.sourceToken = resource.sourceToken;
-    if (resource.title) payload.title = resource.title;
-    if (resource.description) payload.description = resource.description;
-    if (resource.category) payload.category = resource.category;
-    if (resource.tags?.length) payload.tags = resource.tags;
-    if (resource.filename) {
-      payload.filename = resource.sourceToken
-        ? resource.filename
-        : normalizeQdnPublishFilename(resource.filename).transport;
+  const chunks = chunkResources(resources);
+  const published: MultiplePublishPublishedResource[] = [];
+  const failures: MultiplePublishFailedResource[] = [];
+  let extra: Record<string, unknown> = {};
+  let firstResponse = true;
+
+  for (const chunk of chunks) {
+    const ready: Array<{ resource: PublishMultipleResource; sourceToken: string }> = [];
+
+    for (const resource of chunk) {
+      assertNoLegacyPublishInput(resource, ACTION_PUBLISH_MULTIPLE_RESOURCES);
+
+      try {
+        ready.push({ resource, sourceToken: await resolvePublishSourceToken(resource) });
+      } catch (error) {
+        failures.push({
+          error: errorMessage(error, 'QDN publish source preparation failed.'),
+          resource: coordinateOf(resource),
+        });
+      }
     }
-    if (typeof resource.fee === 'number') payload.fee = resource.fee;
 
-    return payload;
-  });
+    if (ready.length === 0) {
+      // Single logical publication: fail closed with the real preparation
+      // error. Chunked operations keep going and report the item failures.
+      if (chunks.length === 1) {
+        throw new Error(failures[0]?.error ?? 'No QDN publish source could be prepared.');
+      }
 
-  return sendBridgeRequest({
-    action: 'PUBLISH_MULTIPLE_QDN_RESOURCES',
-    resources: payloadResources,
-  }) as Promise<MultiplePublishResult>;
+      firstResponse = false;
+      continue;
+    }
+
+    let response: MultiplePublishResult;
+
+    try {
+      response = normalizePublishResponse(
+        await sendBridgeRequest({
+          action: ACTION_PUBLISH_MULTIPLE_RESOURCES,
+          resources: ready.map(({ resource, sourceToken }) =>
+            buildPublishRequestPayload(resource, sourceToken, ACTION_PUBLISH_MULTIPLE_RESOURCES),
+          ),
+        }),
+        ACTION_PUBLISH_MULTIPLE_RESOURCES,
+      );
+    } catch (error) {
+      // Nothing has been published yet: preserve the previous single-request
+      // behaviour and surface the bridge failure directly.
+      if (firstResponse && published.length === 0) throw error;
+
+      const message = errorMessage(error, 'QDN batch publication chunk failed.');
+
+      for (const { resource } of ready) {
+        failures.push({ error: message, resource: coordinateOf(resource) });
+      }
+
+      firstResponse = false;
+      continue;
+    }
+
+    if (firstResponse) {
+      extra = Object.fromEntries(
+        Object.entries(response).filter(([key]) => key !== 'published' && key !== 'failures'),
+      );
+    }
+
+    published.push(...response.published);
+    failures.push(...response.failures);
+    firstResponse = false;
+  }
+
+  return {
+    ...(extra as Omit<MultiplePublishResult, 'published' | 'failures'>),
+    accepted: typeof extra.accepted === 'boolean' ? extra.accepted : true,
+    action: typeof extra.action === 'string' ? extra.action : ACTION_PUBLISH_MULTIPLE_RESOURCES,
+    published,
+    failures,
+  };
+}
+
+/**
+ * Deterministic staged filename for a NodeFM JSON metadata resource.
+ *
+ * Home requires a filename for staged bytes. NodeFM metadata resources are
+ * plain JSON documents whose identity is the QDN coordinate, not the file
+ * name, so the identifier is the stable source of the staged name.
+ */
+export function qdnJsonPublishFileName(identifier: string): string {
+  const base = identifier
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[.-]+|[.-]+$/g, '');
+
+  return `${base || 'nodefm-metadata'}.json`;
 }
 
 // ── Select Publish Source (Native File Picker) ──────────────────────
@@ -190,13 +605,16 @@ export type SelectPublishSourceResult =
  * Open the native file picker to select a file or directory for publishing.
  * Returns a sourceToken that can be passed to `publishResource()`.
  *
- * This is the safe path for large audio files — avoids base64 in the browser.
+ * This is the safe path for large audio files — Home keeps the bytes on disk
+ * and NodeFM never materializes them as base64 in the browser.
  */
 export async function selectPublishSource(
   kind: 'file' | 'directory' = 'file',
 ): Promise<SelectPublishSourceResult> {
+  await requireQdnPublishSourceSupported('select');
+
   return sendBridgeRequest({
-    action: 'SELECT_QDN_PUBLISH_SOURCE',
+    action: ACTION_SELECT_PUBLISH_SOURCE,
     kind,
   }) as Promise<SelectPublishSourceResult>;
 }
@@ -497,9 +915,69 @@ export async function getQdnResourceStreamUrl(ref: QdnResourceRef): Promise<stri
   return requireQdnResourceStreamUrl(result);
 }
 
+export type QdnBackgroundAudioItem = {
+  artist?: string;
+  durationMs: number;
+  endPositionMs: number;
+  expectedStartUtcMs: number;
+  mediaId: string;
+  resource: QdnResourceRef;
+  title: string;
+};
+
+export type QdnBackgroundAudioStatus = {
+  currentIndex: number;
+  currentPositionMs: number;
+  hasQueue: boolean;
+  isPlaying: boolean;
+  mediaId: string | null;
+  playbackState: 'idle' | 'buffering' | 'ready' | 'ended';
+  playWhenReady: boolean;
+};
+
+export async function supportsQdnBackgroundAudio(): Promise<boolean> {
+  const actions = await sendBridgeRequest<unknown>({ action: 'SHOW_ACTIONS' });
+  return Array.isArray(actions) && actions.includes('SET_QDN_BACKGROUND_AUDIO_QUEUE');
+}
+
+export async function setQdnBackgroundAudioQueue(
+  items: readonly QdnBackgroundAudioItem[],
+  startPositionMs: number,
+): Promise<QdnBackgroundAudioStatus> {
+  return sendBridgeRequest({
+    action: 'SET_QDN_BACKGROUND_AUDIO_QUEUE',
+    items: items.map((item) => ({
+      artist: item.artist,
+      durationMs: item.durationMs,
+      endPositionMs: item.endPositionMs,
+      expectedStartUtcMs: item.expectedStartUtcMs,
+      mediaId: item.mediaId,
+      service: item.resource.service,
+      name: item.resource.name,
+      ...(item.resource.identifier ? { identifier: item.resource.identifier } : {}),
+      title: item.title,
+    })),
+    playWhenReady: true,
+    startIndex: 0,
+    startPositionMs: Math.max(0, Math.round(startPositionMs)),
+  });
+}
+
+export async function controlQdnBackgroundAudio(
+  command: 'pause' | 'play' | 'stop',
+): Promise<QdnBackgroundAudioStatus> {
+  return sendBridgeRequest({ action: 'CONTROL_QDN_BACKGROUND_AUDIO', command });
+}
+
+export async function getQdnBackgroundAudioStatus(): Promise<QdnBackgroundAudioStatus> {
+  return sendBridgeRequest({ action: 'GET_QDN_BACKGROUND_AUDIO_STATUS' });
+}
+
 // ── Delete Resource ─────────────────────────────────────────────────
 
 export async function deleteQdnResource(ref: QdnResourceRef): Promise<unknown> {
+  await requireAccountWrite('DELETE_QDN_RESOURCE');
+
   return sendBridgeRequest({
     action: 'DELETE_QDN_RESOURCE',
     service: ref.service,

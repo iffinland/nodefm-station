@@ -8,7 +8,7 @@
  * resolved to an approved Station Track.
  * ============================================================ */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageShell } from '../components/PageShell';
 import { LoadingState } from '../components/LoadingState';
@@ -19,6 +19,7 @@ import {
   type PublicationProgressState,
 } from '../components/PublicationProgress';
 import { useAuth } from '../app/providers/authContext';
+import { useStableAccountIdentity } from '../hooks/useStableAccountIdentity';
 import { useStation } from '../features/station';
 import { useLibrary } from '../hooks/useLibrary';
 import {
@@ -46,7 +47,7 @@ import {
 export default function ListenerPlaylistEditorPage() {
   const { playlistId = 'new' } = useParams<{ playlistId: string }>();
   const navigate = useNavigate();
-  const { auth, ownerName } = useAuth();
+  const { auth } = useAuth();
   const { publisherName: stationPublisherName, station } = useStation();
   const { tracks: libraryTracks, loading: libraryLoading } = useLibrary();
   const trackFiltering = useTrackFiltering(libraryTracks);
@@ -87,6 +88,10 @@ export default function ListenerPlaylistEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [publishProgress, setPublishProgress] = useState<PublicationProgressState | null>(null);
+  // Identifies the publish run that owns the page-local progress UI. It is
+  // bumped whenever the page state is reset (real identity or route change),
+  // so a resumed publish that outlives its page cannot write into the next one.
+  const publishRunRef = useRef(0);
   const [activeSource, setActiveSource] = useState<
     'station-library' | 'my-uploads' | 'upload-music'
   >('station-library');
@@ -103,16 +108,23 @@ export default function ListenerPlaylistEditorPage() {
     ).length,
   );
 
-  const ownerAddress = auth.status === 'authenticated' ? auth.address : null;
+  // A lock-state-only auth refresh is not an identity change: the last
+  // resolved account is held through the transient loading state so authored
+  // drafts and in-flight publish UI survive Home locking/unlocking the wallet.
+  const identity = useStableAccountIdentity(auth);
+  const ownerName = identity?.name ?? null;
+  const ownerAddress = identity?.address ?? null;
   const identityKey = `${ownerName ?? ''}\u0000${ownerAddress ?? ''}\u0000${playlistId}`;
 
   useEffect(() => {
+    publishRunRef.current += 1;
     setDraft(null);
     setInitialized(false);
     setEditingMeta(false);
     setEditVisibility('private');
     setError(null);
     setSuccess(null);
+    setBusy(false);
     setPublishProgress(null);
     setActiveSource('station-library');
     setUploadSearch('');
@@ -339,6 +351,9 @@ export default function ListenerPlaylistEditorPage() {
   const handlePublish = useCallback(async () => {
     if (!draft || !publication?.publishable || !ownerName || !ownerAddress) return;
 
+    const runId = publishRunRef.current + 1;
+    publishRunRef.current = runId;
+
     setBusy(true);
     setError(null);
     setSuccess(null);
@@ -353,34 +368,33 @@ export default function ListenerPlaylistEditorPage() {
 
     const result = await publishDraft(draft, publication.tracks, latest);
 
+    // A successful write always clears its own draft record, even if the page
+    // has moved on to another identity or route in the meantime.
     if (result.ok) {
       clearDraft(draft.playlistId);
-      setPublishProgress((current) => {
-        if (!current) return current;
-        return {
-          phase: 'success' as const,
-          rows: current.rows.map((row) => ({
-            ...row,
-            status: 'succeeded' as const,
-            error: undefined,
-          })),
-          error: undefined,
-        };
+    }
+
+    // The page was reset (different account or playlist) while the write was
+    // in flight: that run no longer owns this page's progress UI.
+    if (publishRunRef.current !== runId) return;
+
+    if (result.ok) {
+      setPublishProgress({
+        phase: 'success',
+        rows: rows.map((row) => ({ ...row, status: 'succeeded' as const, error: undefined })),
+        error: undefined,
       });
     } else {
       const partial = 'partial' in result && result.partial === true;
-      setPublishProgress((current) => {
-        if (!current) return current;
-        return {
-          phase: 'failed' as const,
-          rows: current.rows.map((row) => {
-            if (row.id === 'version' && partial) {
-              return { ...row, status: 'succeeded' as const, error: undefined };
-            }
-            return { ...row, status: 'failed' as const };
-          }),
-          error: result.error,
-        };
+      setPublishProgress({
+        phase: 'failed',
+        rows: rows.map((row) => {
+          if (row.id === 'version' && partial) {
+            return { ...row, status: 'succeeded' as const, error: undefined };
+          }
+          return { ...row, status: 'failed' as const };
+        }),
+        error: result.error,
       });
     }
 
@@ -416,7 +430,10 @@ export default function ListenerPlaylistEditorPage() {
     }
   }, [draft, getLatestVersion, ownerAddress, ownerName, stationSubmission?.eligible]);
 
-  if (auth.status === 'loading') {
+  // Only the very first auth resolution may replace the editor with a loading
+  // screen. A lock-state refresh keeps the already-resolved identity, so the
+  // editor (and any in-flight publish modal) stays mounted.
+  if (auth.status === 'loading' && !identity) {
     return (
       <PageShell title="Listener Playlist Editor">
         <LoadingState message="Loading playlist editor…" />

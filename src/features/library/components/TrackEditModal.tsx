@@ -55,7 +55,7 @@ export function TrackEditModal({ track, onClose }: Props) {
     try {
       const cover = await readCoverFile(file);
       setCoverFile(file);
-      setCoverBase64(cover.data64);
+      setCoverBase64(cover.bytesBase64);
       setCoverPreview(cover.dataUrl);
       setRemoveCover(false);
       setError(null);
@@ -109,7 +109,7 @@ export function TrackEditModal({ track, onClose }: Props) {
             title: title || track.title,
             publisherName,
             file: coverFile,
-            data64: coverBase64,
+            bytesBase64: coverBase64,
             metadata: {
               title: title || track.title,
               artist: artist || undefined,

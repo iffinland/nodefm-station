@@ -56,7 +56,7 @@ type State = {
   genres: string;
   tags: string;
   coverFile: File | null;
-  coverData64: string | null;
+  coverBytesBase64: string | null;
   coverWarning: string | null;
   error: string | null;
 };
@@ -89,7 +89,7 @@ export function AddQdnFlow({
     genres: '',
     tags: '',
     coverFile: null,
-    coverData64: null,
+    coverBytesBase64: null,
     coverWarning: null,
     error: null,
   });
@@ -130,7 +130,7 @@ export function AddQdnFlow({
       releaseDate: '',
       durationMs: null,
       coverFile: null,
-      coverData64: null,
+      coverBytesBase64: null,
       coverWarning: null,
     }));
 
@@ -161,7 +161,7 @@ export function AddQdnFlow({
       setState((s) => ({
         ...s,
         coverFile: file,
-        coverData64: cover.data64,
+        coverBytesBase64: cover.bytesBase64,
         coverWarning: null,
         error: null,
       }));
@@ -196,7 +196,7 @@ export function AddQdnFlow({
     }
 
     setState((s) => ({ ...s, step: 'importing', error: null, coverWarning: null }));
-    const hasCover = Boolean(state.coverFile && state.coverData64 && publisherName);
+    const hasCover = Boolean(state.coverFile && state.coverBytesBase64 && publisherName);
     const rows: PublicationProgressState['rows'] = [
       ...(hasCover
         ? [{ id: 'cover' as const, label: 'Cover image', status: 'active' as const }]
@@ -235,12 +235,12 @@ export function AddQdnFlow({
         track,
         publisherName: publisherName!,
         cover:
-          state.coverFile && state.coverData64 && publisherName
+          state.coverFile && state.coverBytesBase64 && publisherName
             ? {
                 publisherName,
                 title: track.title,
                 file: state.coverFile,
-                data64: state.coverData64,
+                bytesBase64: state.coverBytesBase64,
               }
             : undefined,
       });
@@ -294,7 +294,7 @@ export function AddQdnFlow({
     state.genres,
     state.tags,
     state.coverFile,
-    state.coverData64,
+    state.coverBytesBase64,
     state.durationMs,
     ownerAddress,
     publisherName,
@@ -507,7 +507,7 @@ export function AddQdnFlow({
                   if (file) void handleCoverSelected(file);
                 }}
               />
-              {state.coverData64 ? (
+              {state.coverBytesBase64 ? (
                 <img
                   src={state.coverFile ? URL.createObjectURL(state.coverFile) : ''}
                   alt="Cover preview"

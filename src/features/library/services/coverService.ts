@@ -43,7 +43,8 @@ export function fileToDataUrl(file: File): Promise<string> {
 
 export async function readCoverFile(file: File): Promise<{
   fileName: string;
-  data64: string;
+  bytesBase64: string;
+  mimeType: string;
   dataUrl: string;
 }> {
   const sizeError = getCoverSizeError(file.size);
@@ -59,7 +60,8 @@ export async function readCoverFile(file: File): Promise<{
 
   return {
     fileName: file.name,
-    data64: dataUrl.slice(commaIndex + 1),
+    bytesBase64: dataUrl.slice(commaIndex + 1),
+    mimeType: file.type || 'application/octet-stream',
     dataUrl,
   };
 }
@@ -68,7 +70,7 @@ export type PublishTrackCoverInput = {
   publisherName: string;
   title: string;
   file: File;
-  data64: string;
+  bytesBase64: string;
 };
 
 function trackCoverPublishResource(input: PublishTrackCoverInput): {
@@ -96,9 +98,10 @@ function trackCoverPublishResource(input: PublishTrackCoverInput): {
       service: 'IMAGE',
       name: input.publisherName.trim(),
       identifier,
-      data64: input.data64,
+      bytesBase64: input.bytesBase64,
+      fileName: input.file.name,
+      mimeType: input.file.type || 'application/octet-stream',
       title: `${input.title.trim() || 'Track'} cover`,
-      filename: input.file.name,
     },
     ref,
   };
@@ -134,7 +137,7 @@ export type PublishAndUpdateTrackCoverInput = {
   title: string;
   publisherName: string;
   file: File;
-  data64: string;
+  bytesBase64: string;
   /**
    * Any other metadata edits to apply in the same Track metadata resource
    * update. `cover` and `removeCover` are intentionally omitted from this
@@ -158,7 +161,7 @@ export async function publishAndUpdateTrackCover(
     publisherName: input.publisherName,
     title: input.title,
     file: input.file,
-    data64: input.data64,
+    bytesBase64: input.bytesBase64,
   });
 
   const current = getTrackById(input.trackId);
@@ -224,7 +227,7 @@ export async function publishNewTrackWithCover(
         publisherName: input.cover.publisherName,
         title: input.cover.title,
         file: input.cover.file,
-        data64: input.cover.data64,
+        bytesBase64: input.cover.bytesBase64,
       })
     : undefined;
   const trackResource = trackPublishResource(input.track, input.publisherName);

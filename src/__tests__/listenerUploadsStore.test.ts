@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../qortium/qdn', () => ({
+  qdnJsonPublishFileName: (identifier: string) => `${identifier}.json`,
   fetchQdnResourceData: vi.fn(),
   searchQdnResources: vi.fn(),
 }));

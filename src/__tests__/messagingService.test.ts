@@ -9,6 +9,7 @@ vi.mock('../qortium/bridge', () => ({
 }));
 
 import { sendBridgeRequest } from '../qortium/bridge';
+import { withUnlockedTestAccount } from './support/writeGateBridge';
 import {
   buildDirectMessageRequest,
   sendStationMessage,
@@ -31,12 +32,14 @@ describe('messaging service', () => {
   });
 
   it('sends a valid station message exactly once', async () => {
-    mockedSend.mockResolvedValue({
-      accepted: true,
-      direct: true,
-      encrypted: true,
-      recipientAddress: 'Q-owner',
-    });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({
+        accepted: true,
+        direct: true,
+        encrypted: true,
+        recipientAddress: 'Q-owner',
+      })),
+    );
 
     await sendStationMessage({
       recipientAddress: 'Q-owner',
@@ -44,7 +47,9 @@ describe('messaging service', () => {
       messagingEnabled: true,
     });
 
-    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(
+      mockedSend.mock.calls.filter(([request]) => request.action === 'SEND_CHAT_MESSAGE'),
+    ).toHaveLength(1);
     expect(mockedSend).toHaveBeenCalledWith({
       action: 'SEND_CHAT_MESSAGE',
       recipientAddress: 'Q-owner',
@@ -79,7 +84,11 @@ describe('messaging service', () => {
   });
 
   it('propagates remote send failure as an error', async () => {
-    mockedSend.mockRejectedValue(new Error('Direct private chat requires a local Core'));
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => {
+        throw new Error('Direct private chat requires a local Core');
+      }),
+    );
 
     await expect(
       sendStationMessage({

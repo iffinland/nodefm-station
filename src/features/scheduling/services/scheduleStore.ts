@@ -14,6 +14,7 @@ import {
   deleteQdnResource,
   fetchQdnResourceData,
   publishMultipleResources,
+  qdnJsonPublishFileName,
   publishResource,
   searchQdnResources,
 } from '../../../qortium/qdn';
@@ -79,13 +80,15 @@ function scheduleEventPublishResource(
 ): PublishMultipleResource {
   assertValidScheduleEvent(event);
   const json = serializeScheduleEventForQdn(event);
-  const data64 = btoa(unescape(encodeURIComponent(json)));
+  const identifier = getScheduleEventQdnIdentifier(event.eventId);
 
   return {
     service: SCHEDULE_QDN_SERVICE,
     name: ownerName,
-    identifier: getScheduleEventQdnIdentifier(event.eventId),
-    data64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(json))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: event.title,
   };
 }
@@ -104,13 +107,15 @@ function scheduleRecurrencePublishResource(
   }
 
   const json = serializeScheduleRecurrenceForQdn(recurrence);
-  const data64 = btoa(unescape(encodeURIComponent(json)));
+  const identifier = getScheduleRecurrenceQdnIdentifier(recurrence.recurrenceId);
 
   return {
     service: SCHEDULE_QDN_SERVICE,
     name: ownerName,
-    identifier: getScheduleRecurrenceQdnIdentifier(recurrence.recurrenceId),
-    data64,
+    identifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(json))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: recurrence.title,
   };
 }

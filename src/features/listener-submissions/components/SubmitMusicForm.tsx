@@ -16,6 +16,7 @@ import {
   type PublicationProgressState,
 } from '../../../components/PublicationProgress';
 import { selectPublishSource, type SelectPublishSourceResult } from '../../../qortium/qdn';
+import { useStableAccountIdentity } from '../../../hooks/useStableAccountIdentity';
 import { generateId } from '../../../utils/id';
 import type { ListenerTrackSubmission } from '../../../types/domain';
 import { publishListenerSubmission } from '../services/submissionStore';
@@ -74,8 +75,13 @@ export function SubmitMusicForm({
   const [state, setState] = useState<FormState>(initialFormState);
   const [publication, setPublication] = useState<PublicationProgressState | null>(null);
 
-  const submitterName = auth.status === 'authenticated' ? auth.name?.trim() || null : null;
-  const submitterAddress = auth.status === 'authenticated' ? auth.address : null;
+  // A lock-state-only auth refresh is not an identity change: the last
+  // resolved account is held through the transient loading state so an
+  // authored draft and any in-flight publication survive Home locking and
+  // unlocking the wallet.
+  const identity = useStableAccountIdentity(auth);
+  const submitterName = identity?.name.trim() || null;
+  const submitterAddress = identity?.address ?? null;
   const identityKey = `${submitterAddress ?? ''}\u0000${submitterName ?? ''}`;
   const identityKeyRef = useRef(identityKey);
   identityKeyRef.current = identityKey;
@@ -220,7 +226,8 @@ export function SubmitMusicForm({
         state.coverFile && state.coverBase64
           ? {
               fileName: state.coverFile.name,
-              data64: state.coverBase64.split(',')[1],
+              bytesBase64: state.coverBase64.split(',')[1] ?? '',
+              ...(state.coverFile.type ? { mimeType: state.coverFile.type } : {}),
             }
           : undefined,
     });
@@ -308,7 +315,10 @@ export function SubmitMusicForm({
     remember,
   ]);
 
-  if (auth.status === 'loading') {
+  // Only the first identity resolution may replace the form with a loading
+  // screen. A lock-state refresh keeps the resolved identity, so the draft and
+  // any in-flight publication progress stay mounted.
+  if (auth.status === 'loading' && !identity) {
     return <LoadingState message="Checking Qortium identity…" />;
   }
 

@@ -12,6 +12,7 @@ vi.mock('../qortium/bridge', () => ({
 }));
 
 import { sendBridgeRequest } from '../qortium/bridge';
+import { withUnlockedTestAccount } from './support/writeGateBridge';
 import { sendDirectChatMessage, sendNativeTip } from '../qortium/social';
 import { buildQdnUrl, getCurrentQdnAppIdentity, openQdnAddress } from '../qortium/navigation';
 
@@ -23,14 +24,16 @@ describe('SEND_CHAT_MESSAGE direct bridge path', () => {
   });
 
   it('sends the exact direct-recipient request and returns confirmed result', async () => {
-    mockedSend.mockResolvedValue({
-      accepted: true,
-      action: 'SEND_CHAT_MESSAGE',
-      direct: true,
-      encrypted: true,
-      recipientAddress: 'Q-owner',
-      result: { signature: 'tx-1' },
-    });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({
+        accepted: true,
+        action: 'SEND_CHAT_MESSAGE',
+        direct: true,
+        encrypted: true,
+        recipientAddress: 'Q-owner',
+        result: { signature: 'tx-1' },
+      })),
+    );
 
     const result = await sendDirectChatMessage({
       recipientAddress: 'Q-owner',
@@ -48,10 +51,12 @@ describe('SEND_CHAT_MESSAGE direct bridge path', () => {
   });
 
   it('never reports an unaccepted response as sent', async () => {
-    mockedSend.mockResolvedValue({
-      accepted: false,
-      reason: 'USER_CANCELLED',
-    });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({
+        accepted: false,
+        reason: 'USER_CANCELLED',
+      })),
+    );
 
     await expect(
       sendDirectChatMessage({ recipientAddress: 'Q-owner', message: 'Hello' }),
@@ -59,13 +64,15 @@ describe('SEND_CHAT_MESSAGE direct bridge path', () => {
   });
 
   it('does not claim encryption unless the bridge proves it', async () => {
-    mockedSend.mockResolvedValue({
-      accepted: true,
-      action: 'SEND_CHAT_MESSAGE',
-      direct: true,
-      encrypted: false,
-      recipientAddress: 'Q-owner',
-    });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({
+        accepted: true,
+        action: 'SEND_CHAT_MESSAGE',
+        direct: true,
+        encrypted: false,
+        recipientAddress: 'Q-owner',
+      })),
+    );
 
     const result = await sendDirectChatMessage({
       recipientAddress: 'Q-owner',
@@ -82,14 +89,16 @@ describe('SEND_COIN native tip bridge path', () => {
   });
 
   it('sends the exact native tip request and parses a confirmed signature', async () => {
-    mockedSend.mockResolvedValue({
-      accepted: true,
-      action: 'SEND_COIN',
-      recipient: 'Q-owner',
-      amount: '1.25',
-      result: { signature: 'tip-tx' },
-      transactionSignature: 'tip-tx',
-    });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({
+        accepted: true,
+        action: 'SEND_COIN',
+        recipient: 'Q-owner',
+        amount: '1.25',
+        result: { signature: 'tip-tx' },
+        transactionSignature: 'tip-tx',
+      })),
+    );
 
     const result = await sendNativeTip({ recipient: 'Q-owner', amount: '1.25' });
 
@@ -103,7 +112,9 @@ describe('SEND_COIN native tip bridge path', () => {
   });
 
   it('throws for rejected/cancelled tip responses', async () => {
-    mockedSend.mockResolvedValue({ accepted: false, reason: 'USER_CANCELLED' });
+    mockedSend.mockImplementation(
+      withUnlockedTestAccount(async () => ({ accepted: false, reason: 'USER_CANCELLED' })),
+    );
 
     await expect(sendNativeTip({ recipient: 'Q-owner', amount: '1.25' })).rejects.toThrow(
       /USER_CANCELLED/,
@@ -137,7 +148,7 @@ describe('QDN navigation helpers', () => {
   });
 
   it('opens a new tab through the exact bridge action', async () => {
-    mockedSend.mockResolvedValue(true);
+    mockedSend.mockImplementation(withUnlockedTestAccount(async () => true));
 
     await openQdnAddress('qdn://APP/NodeFM/NodeFM', 'new');
 

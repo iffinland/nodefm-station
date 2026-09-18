@@ -7,7 +7,12 @@
  * ============================================================ */
 
 import type { Station } from '../../../types/domain';
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../../../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishResource,
+  qdnJsonPublishFileName,
+  searchQdnResources,
+} from '../../../qortium/qdn';
 import { NODEFM_APP_NAME } from '../../../qortium/navigation';
 import {
   STATION_QDN_IDENTIFIER,
@@ -209,13 +214,14 @@ export async function saveStationConfig(
   publisherName: string,
 ): Promise<Station> {
   const json = serializeStationForQdn(nextStation);
-  const data64 = btoa(unescape(encodeURIComponent(json)));
 
   await publishResource({
     service: STATION_QDN_SERVICE,
     name: publisherName,
     identifier: STATION_QDN_IDENTIFIER,
-    data64,
+    bytesBase64: btoa(unescape(encodeURIComponent(json))),
+    fileName: qdnJsonPublishFileName(STATION_QDN_IDENTIFIER),
+    mimeType: 'application/json',
     title: nextStation.name,
     description: nextStation.description,
   });

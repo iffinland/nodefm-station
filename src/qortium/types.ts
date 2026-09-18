@@ -33,7 +33,9 @@ export type QdnRequestAction =
   | 'PUBLISH_QDN_RESOURCE'
   | 'PUBLISH_MULTIPLE_QDN_RESOURCES'
   | 'DELETE_QDN_RESOURCE'
-  | 'SELECT_QDN_PUBLISH_SOURCE';
+  | 'SELECT_QDN_PUBLISH_SOURCE'
+  | 'STAGE_QDN_PUBLISH_SOURCE'
+  | 'SHOW_ACTIONS';
 
 // ── Home Display Settings ───────────────────────────────────────────
 

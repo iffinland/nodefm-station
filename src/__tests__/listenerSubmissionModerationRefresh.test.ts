@@ -13,6 +13,7 @@ vi.mock('../qortium/qdn', () => ({
   getQdnResourceUrl: vi.fn(),
   publishMultipleResources: vi.fn(),
   publishResource: vi.fn(),
+  qdnJsonPublishFileName: (identifier: string) => `${identifier}.json`,
   searchQdnResources: vi.fn(),
 }));
 
@@ -194,13 +195,17 @@ describe('listener submission moderation refresh regression', () => {
       service: 'JSON',
       name: ownerName,
       identifier: `nodefm-track-${track.trackId}`,
-      data64: 'dHJhY2s=',
+      bytesBase64: 'dHJhY2s=',
+      fileName: `nodefm-track-${track.trackId}.json`,
+      mimeType: 'application/json',
       title: track.title,
     }));
     mockedBatchPublish.mockImplementation(async (resources) => {
       for (const resource of resources) {
         if (resource.identifier?.startsWith(MODERATION_PREFIX)) {
-          const payload = JSON.parse(atob(resource.data64 ?? '')) as SubmissionModeration | null;
+          const payload = JSON.parse(
+            atob(resource.bytesBase64 ?? ''),
+          ) as SubmissionModeration | null;
           if (payload && (payload.decision === 'accepted' || payload.decision === 'rejected')) {
             moderationResources.set(resource.identifier, payload);
           }
@@ -228,7 +233,7 @@ describe('listener submission moderation refresh regression', () => {
       const service = input.service;
 
       if (service === 'JSON' && identifier.startsWith(MODERATION_PREFIX)) {
-        const payload = JSON.parse(atob(input.data64 ?? '')) as SubmissionModeration | null;
+        const payload = JSON.parse(atob(input.bytesBase64 ?? '')) as SubmissionModeration | null;
 
         if (payload && (payload.decision === 'accepted' || payload.decision === 'rejected')) {
           moderationResources.set(identifier, payload);

@@ -24,6 +24,7 @@ import {
   publishMultipleResources,
   publishResource,
   searchQdnResources,
+  qdnJsonPublishFileName,
   type SelectPublishSourceResult,
 } from '../../../qortium/qdn';
 import type { PublishMultipleResource } from '../../../qortium/qdn';
@@ -96,7 +97,8 @@ export type SubmissionPublishInput = {
   audioSource: Exclude<SelectPublishSourceResult, { canceled: true }>;
   cover?: {
     fileName: string;
-    data64: string;
+    bytesBase64: string;
+    mimeType?: string;
   };
 };
 
@@ -339,7 +341,6 @@ export async function publishListenerSubmission(
     identifier: audioIdentifier,
     sourceToken: input.audioSource.sourceToken,
     title: input.title.trim(),
-    filename: input.audioSource.fileName,
   };
   let coverRef: QdnResourceRef | undefined;
   const coverIdentifier = input.cover
@@ -350,9 +351,10 @@ export async function publishListenerSubmission(
         service: 'IMAGE',
         name: input.submitterName.trim(),
         identifier: coverIdentifier!,
-        data64: input.cover.data64,
+        bytesBase64: input.cover.bytesBase64,
+        fileName: input.cover.fileName,
+        ...(input.cover.mimeType ? { mimeType: input.cover.mimeType } : {}),
         title: `${input.title.trim()} cover`,
-        filename: input.cover.fileName,
       }
     : undefined;
 
@@ -434,11 +436,14 @@ export async function publishListenerSubmission(
   });
 
   try {
+    const submissionIdentifier = getSubmissionQdnIdentifier(input.submissionId);
     const submissionResult = await publishResource({
       service: SUBMISSION_QDN_SERVICE,
       name: input.submitterName.trim(),
-      identifier: getSubmissionQdnIdentifier(input.submissionId),
-      data64: btoa(unescape(encodeURIComponent(serializeSubmissionForQdn(submissionDraft)))),
+      identifier: submissionIdentifier,
+      bytesBase64: btoa(unescape(encodeURIComponent(serializeSubmissionForQdn(submissionDraft)))),
+      fileName: qdnJsonPublishFileName(submissionIdentifier),
+      mimeType: 'application/json',
       title: submissionDraft.title,
       description: submissionDraft.description,
       tags: submissionDraft.tags,
@@ -481,11 +486,14 @@ export async function publishSubmissionMetadata(
     throw new Error('Submission publisher does not match the acting account name.');
   }
 
+  const submissionIdentifier = getSubmissionQdnIdentifier(submission.submissionId);
   const result = await publishResource({
     service: SUBMISSION_QDN_SERVICE,
     name: submission.submitterName,
-    identifier: getSubmissionQdnIdentifier(submission.submissionId),
-    data64: btoa(unescape(encodeURIComponent(serializeSubmissionForQdn(submission)))),
+    identifier: submissionIdentifier,
+    bytesBase64: btoa(unescape(encodeURIComponent(serializeSubmissionForQdn(submission)))),
+    fileName: qdnJsonPublishFileName(submissionIdentifier),
+    mimeType: 'application/json',
     title: submission.title,
     description: submission.description,
     tags: submission.tags,
@@ -832,11 +840,17 @@ function publishModeration(
   moderation: SubmissionModeration,
   stationPublisherName: string,
 ): Promise<Awaited<ReturnType<typeof publishResource>>> {
+  const identifier = getSubmissionModerationQdnIdentifier(moderation.submissionId);
+
   return publishResource({
     service: SUBMISSION_QDN_SERVICE,
     name: stationPublisherName.trim(),
-    identifier: getSubmissionModerationQdnIdentifier(moderation.submissionId),
-    data64: btoa(unescape(encodeURIComponent(serializeSubmissionModerationForQdn(moderation)))),
+    identifier,
+    bytesBase64: btoa(
+      unescape(encodeURIComponent(serializeSubmissionModerationForQdn(moderation))),
+    ),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: `Listener submission ${moderation.decision}`,
   });
 }
@@ -845,11 +859,17 @@ function submissionModerationPublishResource(
   moderation: SubmissionModeration,
   stationPublisherName: string,
 ): PublishMultipleResource {
+  const identifier = getSubmissionModerationQdnIdentifier(moderation.submissionId);
+
   return {
     service: SUBMISSION_QDN_SERVICE,
     name: stationPublisherName.trim(),
-    identifier: getSubmissionModerationQdnIdentifier(moderation.submissionId),
-    data64: btoa(unescape(encodeURIComponent(serializeSubmissionModerationForQdn(moderation)))),
+    identifier,
+    bytesBase64: btoa(
+      unescape(encodeURIComponent(serializeSubmissionModerationForQdn(moderation))),
+    ),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: `Listener submission ${moderation.decision}`,
   };
 }

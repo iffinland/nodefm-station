@@ -6,7 +6,12 @@
  * publishers using mode=ALL and reduced to per-track aggregates.
  * ============================================================ */
 
-import { fetchQdnResourceData, publishResource, searchQdnResources } from '../../../qortium/qdn';
+import {
+  fetchQdnResourceData,
+  publishResource,
+  qdnJsonPublishFileName,
+  searchQdnResources,
+} from '../../../qortium/qdn';
 import { resolveNameWalletAddress } from '../../../qortium/identity';
 import type { TrackLikeAggregate, TrackLikeRecord } from './likeService';
 import {
@@ -352,13 +357,13 @@ export async function setTrackLike(
     },
     identifier,
   );
-  const data64 = btoa(unescape(encodeURIComponent(serializeTrackLikeEnvelopeForQdn(envelope))));
-
   await publishResource({
     service: LIKE_QDN_SERVICE,
     name: publisherName.trim(),
     identifier,
-    data64,
+    bytesBase64: btoa(unescape(encodeURIComponent(serializeTrackLikeEnvelopeForQdn(envelope)))),
+    fileName: qdnJsonPublishFileName(identifier),
+    mimeType: 'application/json',
     title: state === 'active' ? 'Track Like' : 'Track Unlike',
   });
 

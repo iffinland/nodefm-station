@@ -13,14 +13,8 @@ export {
 export type { BridgeSource, BridgeResolution, BridgeErrorCode } from './bridge';
 
 // ── Auth ──────────────────────────────────────────────────────────
-export {
-  resolveAuth,
-  refreshAuth,
-  isStationOwner,
-  listenForAccountChanges,
-  publishQdnResource,
-} from './auth';
-export type { AuthState, PublishResourceInput } from './auth';
+export { resolveAuth, refreshAuth, isStationOwner, listenForAccountChanges } from './auth';
+export type { AuthState } from './auth';
 
 // ── Types ─────────────────────────────────────────────────────────
 export type {
@@ -33,11 +27,34 @@ export type {
   QortiumAccount,
 } from './types';
 
+// ── Account write gate (all signed / QDN writes) ──────────────────
+export {
+  requireAccountWrite,
+  runAccountWrite,
+  getAccountWriteReadiness,
+  resetAccountWriteGateCache,
+  QortiumAccountRequiredError,
+  QortiumAccountUnlockUnsupportedError,
+  QortiumAccountUnlockCancelledError,
+  ACTION_GET_SELECTED_ACCOUNT,
+  ACTION_SHOW_ACTIONS,
+  ACTION_UNLOCK_SELECTED_ACCOUNT,
+  ACCOUNT_SELECTION_ACTIONS,
+} from './accountWriteGate';
+export type { AccountWriteTicket, AccountWriteReadiness } from './accountWriteGate';
+
 // ── Phase 2 QDN operations ────────────────────────────────────────
 export {
   publishResource,
   publishMultipleResources,
   selectPublishSource,
+  stageQdnPublishSource,
+  getQdnPublishCapability,
+  isQdnPublishSourceSupported,
+  resetQdnPublishCapabilityCache,
+  QdnPublishSourceUnsupportedError,
+  QDN_PUBLISH_BATCH_MAX_ITEMS,
+  qdnJsonPublishFileName,
   searchQdnResources,
   listQdnResources,
   getQdnResourceMetadata,
@@ -55,6 +72,13 @@ export type {
   PublishResult,
   MultiplePublishResult,
   PublishMultipleResource,
+  MultiplePublishFailedResource,
+  MultiplePublishPublishedResource,
+  QdnPublishCapability,
+  QdnPublishSourceInput,
+  QdnPublishSourceKind,
+  StageQdnPublishSourceInput,
+  StageQdnPublishSourceResult,
   SelectPublishSourceResult,
   QdnSearchParams,
   QdnResourceInfo,
